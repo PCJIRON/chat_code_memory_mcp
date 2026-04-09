@@ -1,16 +1,23 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PHASE_5_ADDED — Phase 5 (Auto Save, Track & Retrieve) added to roadmap
-- **Last Action**: Phase 5 roadmap entry created — 7 tasks, zero-touch automation
-- **Next Step**: `/gsd:plan-phase 5` to create atomic task plan
+- **Status**: PHASE_5_PLANNED — research, plan, and validation complete
+- **Last Action**: Phase 5 plan committed (11 tasks, 7 waves, validation PASS_WITH_NOTES)
+- **Next Step**: `/gsd:execute-phase 5` (implement the plan)
 
-## Phase 5 Scope
-- **Auto-Save:** Intercept every tool call → automatically save to ChromaDB
-- **Auto-Retrieve:** Query ChromaDB before each request → append ~300 token context
-- **Auto-Track:** `watchdog` background thread → detect file changes → auto-trigger `track_files`
-- **Config:** `./data/config.json` — toggle features, configure watch dirs, adjust context budget
-- **Goal:** Zero manual tool calls — everything automatic
+## Phase 5 Plan Summary
+- **Research:** 5-RESEARCH.md — FastMCP monkey-patch, watchdog 5.0.3, OneDrive debounce, config dataclass
+- **Plan:** 5-01-PLAN.md (11 tasks, 7 waves, validation PASS_WITH_NOTES)
+- **Validation:** 5-01-VALIDATION.md — PASS_WITH_NOTES (0 CRITICAL, 0 MAJOR after fixes)
+- **Scope:** Auto-save, auto-retrieve, auto-track — zero-touch MCP server
+- **Waves:**
+  - Wave 1: T1 (Config manager)
+  - Wave 2: T2-T3 (Auto-save middleware + tests)
+  - Wave 3: T4-T5 (Context injector + tests)
+  - Wave 4: T6a-T6b (File watcher + tests)
+  - Wave 5: T7-T8 (Wire everything into mcp_server.py)
+  - Wave 6: T9-T10 (End-to-end integration tests)
+  - Wave 7: T11 (README update)
 
 ## Project Final Stats
 - **Phases:** 4/4 shipped
