@@ -163,3 +163,143 @@ class ASTParser:
         import os
         _, ext = os.path.splitext(file_path)
         return self._EXTENSION_MAP.get(ext.lower(), "unsupported")
+
+    def parse_file(self, file_path: str) -> list[ParsedSymbol]:
+        """Parse a source file and extract all symbols.
+
+        Args:
+            file_path: Path to the source file.
+
+        Returns:
+            List of ParsedSymbol objects found in the file.
+        """
+        if not self._parser:
+            return []
+        try:
+            with open(file_path, "rb") as f:
+                source = f.read()
+            tree = self._parser.parse(source)
+            return self._extract_symbols(tree.root_node, file_path)
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to parse {file_path}: {e}")
+            return []
+
+    def parse_content(self, content: str, language: str) -> list[ParsedSymbol]:
+        """Parse source code content directly.
+
+        Args:
+            content: Source code text.
+            language: Programming language identifier.
+
+        Returns:
+            List of ParsedSymbol objects found in the content.
+        """
+        if not self._parser:
+            return []
+        try:
+            source = content.encode("utf-8")
+            tree = self._parser.parse(source)
+            return self._extract_symbols(tree.root_node, "<string>")
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to parse content: {e}")
+            return []
+
+    def get_imports(self, file_path: str) -> list[str]:
+        """Extract import statements from a source file.
+
+        Args:
+            file_path: Path to the source file.
+
+        Returns:
+            List of imported module/file paths.
+        """
+        symbols = self.parse_file(file_path)
+        return [s.name for s in symbols if s.kind == "import"]
+
+    def _extract_symbols(self, root_node, file_path: str) -> list[ParsedSymbol]:
+        """Extract symbols from a tree-sitter AST root node.
+
+        Args:
+            root_node: The root node of the parsed tree.
+            file_path: Path to the source file.
+
+        Returns:
+            List of ParsedSymbol objects.
+        """
+        symbols: list[ParsedSymbol] = []
+
+        # Extract classes
+        class_nodes: list = []
+        _find_nodes_by_type(root_node, "class_definition", class_nodes)
+        for cls_node in class_nodes:
+            name_node = cls_node.child_by_field_name("name")
+            if name_node:
+                symbols.append(ParsedSymbol(
+                    name=name_node.text.decode(),
+                    kind="class",
+                    file_path=file_path,
+                    line_start=cls_node.start_point[0] + 1,
+                    line_end=cls_node.end_point[0] + 1,
+                ))
+                # Extract methods within class
+                func_nodes: list = []
+                _find_nodes_by_type(cls_node, "function_definition", func_nodes)
+                for func_node in func_nodes:
+                    fname_node = func_node.child_by_field_name("name")
+                    if fname_node:
+                        symbols.append(ParsedSymbol(
+                            name=f"{name_node.text.decode()}.{fname_node.text.decode()}",
+                            kind="method",
+                            file_path=file_path,
+                            line_start=func_node.start_point[0] + 1,
+                            line_end=func_node.end_point[0] + 1,
+                        ))
+
+        # Extract top-level functions (not inside classes)
+        func_nodes: list = []
+        _find_nodes_by_type(root_node, "function_definition", func_nodes)
+        class_line_ranges = [(c.start_point[0], c.end_point[0]) for c in class_nodes]
+        for func_node in func_nodes:
+            # Skip if inside a class
+            if any(start <= func_node.start_point[0] <= end for start, end in class_line_ranges):
+                continue
+            name_node = func_node.child_by_field_name("name")
+            if name_node:
+                symbols.append(ParsedSymbol(
+                    name=name_node.text.decode(),
+                    kind="function",
+                    file_path=file_path,
+                    line_start=func_node.start_point[0] + 1,
+                    line_end=func_node.end_point[0] + 1,
+                ))
+
+        # Extract imports
+        import_nodes: list = []
+        _find_nodes_by_type(root_node, "import_statement", import_nodes)
+        _find_nodes_by_type(root_node, "import_from_statement", import_nodes)
+        for imp_node in import_nodes:
+            symbols.append(ParsedSymbol(
+                name=imp_node.text.decode().strip(),
+                kind="import",
+                file_path=file_path,
+                line_start=imp_node.start_point[0] + 1,
+                line_end=imp_node.end_point[0] + 1,
+            ))
+
+        return symbols
+
+
+def _find_nodes_by_type(node, target_type: str, results: list) -> None:
+    """Recursively find all nodes of a given type in the AST.
+
+    Args:
+        node: The current tree-sitter node.
+        target_type: The node type to search for.
+        results: List to append matching nodes to.
+    """
+    if node.type == target_type:
+        results.append(node)
+    for child in node.children:
+        _find_nodes_by_type(child, target_type, results)

@@ -193,3 +193,174 @@ class TestASTParserDetectLanguage:
         parser = ASTParser()
         lang = parser.detect_language("/nonexistent/file.xyz")
         assert lang == "unsupported"
+
+
+# ---------------------------------------------------------------------------
+# ASTParser tests — parse_file, parse_content, get_imports (T03)
+# ---------------------------------------------------------------------------
+
+SAMPLE_PYTHON_FILE = '''"""A sample module for testing."""
+
+import os
+import sys
+from pathlib import Path
+from typing import Optional
+
+CONSTANT = 42
+
+
+def helper_function(x: int) -> int:
+    """A helper function."""
+    return x + 1
+
+
+class MyClass:
+    """A sample class."""
+
+    def __init__(self, name: str) -> None:
+        """Initialize the class."""
+        self.name = name
+
+    def greet(self) -> str:
+        """Return a greeting."""
+        return f"Hello, {self.name}"
+
+
+def main() -> None:
+    """Entry point."""
+    obj = MyClass("world")
+    print(obj.greet())
+'''
+
+
+class TestASTParserParseFile:
+    """Tests for parse_file and symbol extraction."""
+
+    def test_parse_file_returns_empty_when_no_parser(self) -> None:
+        """parse_file returns empty list when parser is not initialized."""
+        parser = ASTParser.__new__(ASTParser)
+        parser._parser = None
+        result = parser.parse_file("/some/file.py")
+        assert result == []
+
+    def test_parse_python_file_extracts_imports(self, tmp_path) -> None:
+        """parse_file extracts import statements."""
+        f = tmp_path / "sample.py"
+        f.write_text(SAMPLE_PYTHON_FILE)
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        imports = [s for s in symbols if s.kind == "import"]
+        # Should have: import os, import sys, from pathlib import Path, from typing import Optional
+        assert len(imports) >= 4
+
+    def test_parse_python_file_extracts_classes(self, tmp_path) -> None:
+        """parse_file extracts class definitions."""
+        f = tmp_path / "sample.py"
+        f.write_text(SAMPLE_PYTHON_FILE)
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        classes = [s for s in symbols if s.kind == "class"]
+        assert len(classes) == 1
+        assert classes[0].name == "MyClass"
+
+    def test_parse_python_file_extracts_methods(self, tmp_path) -> None:
+        """parse_file extracts methods within classes."""
+        f = tmp_path / "sample.py"
+        f.write_text(SAMPLE_PYTHON_FILE)
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        methods = [s for s in symbols if s.kind == "method"]
+        assert len(methods) == 2
+        method_names = {m.name for m in methods}
+        assert "MyClass.__init__" in method_names
+        assert "MyClass.greet" in method_names
+
+    def test_parse_python_file_extracts_functions(self, tmp_path) -> None:
+        """parse_file extracts top-level function definitions."""
+        f = tmp_path / "sample.py"
+        f.write_text(SAMPLE_PYTHON_FILE)
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        functions = [s for s in symbols if s.kind == "function"]
+        func_names = {f.name for f in functions}
+        assert "helper_function" in func_names
+        assert "main" in func_names
+
+    def test_parse_python_file_1based_line_numbers(self, tmp_path) -> None:
+        """Line numbers are 1-based (not 0-based)."""
+        f = tmp_path / "sample.py"
+        f.write_text(SAMPLE_PYTHON_FILE)
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        for sym in symbols:
+            assert sym.line_start >= 1
+            assert sym.line_end >= 1
+            assert sym.line_end >= sym.line_start
+
+    def test_parse_file_handles_syntax_errors_gracefully(self, tmp_path) -> None:
+        """Syntax errors are handled gracefully without crash."""
+        f = tmp_path / "bad.py"
+        f.write_text("def broken(:\n    pass\n  invalid syntax @@@")
+        parser = ASTParser()
+        # Should not raise
+        symbols = parser.parse_file(str(f))
+        assert isinstance(symbols, list)
+
+    def test_parse_file_returns_empty_for_nonexistent(self) -> None:
+        """Non-existent files return empty list without crash."""
+        parser = ASTParser()
+        symbols = parser.parse_file("/nonexistent/file.py")
+        assert symbols == []
+
+
+class TestASTParserParseContent:
+    """Tests for parse_content."""
+
+    def test_parse_content_extracts_symbols(self) -> None:
+        """parse_content extracts symbols from raw string."""
+        code = '''
+import math
+
+def calculate(x):
+    return math.sqrt(x)
+
+class Calculator:
+    def add(self, a, b):
+        return a + b
+'''
+        parser = ASTParser()
+        symbols = parser.parse_content(code, "python")
+        kinds = {s.kind for s in symbols}
+        assert "import" in kinds
+        assert "function" in kinds
+        assert "class" in kinds
+        assert "method" in kinds
+
+    def test_parse_content_returns_empty_when_no_parser(self) -> None:
+        """parse_content returns empty list when parser is not initialized."""
+        parser = ASTParser.__new__(ASTParser)
+        parser._parser = None
+        result = parser.parse_content("x = 1", "python")
+        assert result == []
+
+
+class TestASTParserGetImports:
+    """Tests for get_imports."""
+
+    def test_get_imports_returns_list_of_strings(self, tmp_path) -> None:
+        """get_imports returns list of import strings."""
+        f = tmp_path / "imports.py"
+        f.write_text("import os\nfrom pathlib import Path\n")
+        parser = ASTParser()
+        imports = parser.get_imports(str(f))
+        assert isinstance(imports, list)
+        assert all(isinstance(i, str) for i in imports)
+        assert len(imports) == 2
+
+    def test_get_imports_empty_file(self, tmp_path) -> None:
+        """get_imports returns empty list for file with no imports."""
+        f = tmp_path / "no_imports.py"
+        f.write_text("x = 1\ny = 2\n")
+        parser = ASTParser()
+        imports = parser.get_imports(str(f))
+        assert imports == []
