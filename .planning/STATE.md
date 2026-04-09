@@ -1,9 +1,17 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PHASE_3_SHIPPED — Phase 3 shipped on master
-- **Last Action**: Phase 3 shipped — UAT PASS, Review PASS_WITH_NOTES, 10 commits
-- **Next Step**: `/gsd:next` → Phase 4 (Integration & Polish)
+- **Status**: PHASE_4_CONTEXT_CAPTURED — Phase 4 decisions documented
+- **Last Action**: Phase 4 CONTEXT.md created — 13 tasks (9 roadmap + 4 MAJOR fixes)
+- **Next Step**: `/gsd:plan-phase 4` (create atomic task plan)
+
+## Phase 4 Decisions Summary
+- **Token compression:** Hybrid template + smart truncation (~100 token budget)
+- **Detail levels:** minimal (~100 tokens), summary (~300 tokens), full (raw)
+- **MAJOR fixes:** All 4 deferred items included in Phase 4 scope
+- **query_chat:** Re-implement with validation (already has params from Phase 2)
+- **Testing:** Focus on new Phase 4 features + integration tests
+- **README:** Comprehensive — architecture, tools, examples, troubleshooting
 
 ## Phase 3 Peer Review
 - **Verdict:** PASS_WITH_NOTES (3-REVIEW.md)
