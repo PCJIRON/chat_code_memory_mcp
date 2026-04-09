@@ -149,6 +149,9 @@ class ChatStore:
         if session_id is None:
             session_id = str(uuid.uuid4())
 
+        if not messages:
+            return {"stored": 0, "session_id": session_id}
+
         now = datetime.now(timezone.utc).isoformat()
         ids = [str(uuid.uuid4()) for _ in messages]
         documents = [msg["content"] for msg in messages]
