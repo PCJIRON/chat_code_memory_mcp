@@ -106,6 +106,91 @@ class ChatStore:
 
         return {"stored": len(messages), "session_id": session_id}
 
+    def _build_where(
+        self,
+        session_id: str | None = None,
+        role: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Build ChromaDB where clause from optional filters.
+
+        Returns None if no filters, single dict if one filter,
+        or {'$and': [...]} if multiple filters.
+        """
+        conditions: list[dict[str, Any]] = []
+        if session_id:
+            conditions.append({"session_id": session_id})
+        if role:
+            conditions.append({"role": role})
+        if not conditions:
+            return None
+        if len(conditions) == 1:
+            return conditions[0]
+        return {"$and": conditions}
+
+    def query_messages(
+        self,
+        query: str,
+        top_k: int = 5,
+        session_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        role: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query chat history by semantic similarity with optional filters.
+
+        Date filtering is done in Python after fetching results because
+        ChromaDB v1.5.7 does not support $gte/$lte on string metadata.
+        We over-fetch with n_results=max(top_k*3, 50) and then filter
+        + slice to top_k.
+
+        Args:
+            query: Natural language search query.
+            top_k: Number of results to return.
+            session_id: Filter to specific session.
+            date_from: ISO 8601 start date (e.g. 2024-01-01T00:00:00).
+            date_to: ISO 8601 end date.
+            role: Filter by role ("user", "assistant", "system").
+
+        Returns:
+            List of result dicts with content, role, timestamp, distance, similarity.
+        """
+        where = self._build_where(session_id=session_id, role=role)
+
+        # Over-fetch to have enough candidates for Python date filtering
+        n_results = max(top_k * 3, 50)
+
+        result = self._collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            where=where,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        # ChromaDB returns double-nested lists: result["documents"] is List[List[str]]
+        docs = result["documents"][0]
+        metas = result["metadatas"][0]
+        dists = result["distances"][0]
+
+        # Apply date filtering in Python (ISO 8601 strings compare lexicographically)
+        filtered: list[dict[str, Any]] = []
+        for i in range(len(docs)):
+            ts = metas[i]["timestamp"]
+            if date_from and ts < date_from:
+                continue
+            if date_to and ts > date_to:
+                continue
+            distance = dists[i]
+            filtered.append({
+                "content": docs[i],
+                "role": metas[i]["role"],
+                "timestamp": ts,
+                "session_id": metas[i]["session_id"],
+                "distance": round(distance, 4),
+                "similarity": round(1 - distance, 4),
+            })
+
+        return filtered[:top_k]
+
     def add_message(self, message: ChatMessage) -> str:
         """Store a chat message in ChromaDB.
 
