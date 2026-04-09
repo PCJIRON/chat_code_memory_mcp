@@ -45,8 +45,10 @@ def register_all() -> None:
     Call this function at server startup to register all tools.
     """
     _register_core(mcp)
-    # Phase 2: from context_memory_mcp.chat_store import register as register_chat
-    # register_chat(mcp)
+    # Phase 2
+    from context_memory_mcp.chat_store import register as register_chat
+
+    register_chat(mcp)
     # Phase 3: from context_memory_mcp.file_graph import register as register_graph
     # register_graph(mcp)
     # Phase 4: from context_memory_mcp.context import register as register_context
