@@ -1,0 +1,19 @@
+[project]
+name = "context-memory-mcp"
+version = "0.1.0"
+description = "MCP server for persistent chat memory and file relationship tracking"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+    "tree-sitter-language-pack>=0.1.0",
+    "networkx>=3.0",
+]
+
+[project.scripts]
+context-memory-mcp = "context_memory_mcp.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.4.0,<5"]
+build-backend = "uv_build"
