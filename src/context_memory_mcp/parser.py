@@ -310,14 +310,44 @@ def _find_nodes_by_type(node, target_type: str, results: list) -> None:
 # Edge extraction functions (T05)
 # ---------------------------------------------------------------------------
 
+def _parse_import_module(sym: ParsedSymbol) -> list[str]:
+    """Extract module name(s) from an import symbol.
+
+    For 'import os' -> ['os']
+    For 'from pathlib import Path' -> ['pathlib']
+    For 'from os.path import join' -> ['os.path']
+
+    Args:
+        sym: ParsedSymbol with kind="import" and name containing the import text.
+
+    Returns:
+        List of module names extracted from the import statement.
+    """
+    text = sym.name  # e.g., "import os" or "from pathlib import Path"
+    modules: list[str] = []
+
+    if text.startswith("import "):
+        # "import os" or "import os.path"
+        module_part = text[len("import "):].strip()
+        if module_part:
+            modules.append(module_part)
+    elif text.startswith("from "):
+        # "from pathlib import Path"
+        parts = text.split()
+        if len(parts) >= 2:
+            modules.append(parts[1])  # "pathlib"
+
+    return modules
+
+
 def extract_imports_edges(
     symbols: list[ParsedSymbol],
     known_files: set[str],
     file_path: str,
 ) -> list[tuple[str, str, str]]:
-    """Extract IMPORTS_FROM edges from parsed symbols.
+    """Extract IMPORTS_FROM edges by parsing module names from AST.
 
-    Matches import statements against known files in the graph.
+    Now uses actual module names instead of substring matching.
 
     Args:
         symbols: List of ParsedSymbol objects from parse_file().
@@ -330,18 +360,27 @@ def extract_imports_edges(
     edges: list[tuple[str, str, str]] = []
     abs_source = os.path.abspath(file_path)
 
+    # Build a lookup: module_name -> file_path
+    module_to_file: dict[str, str] = {}
+    for kf in known_files:
+        base = os.path.splitext(os.path.basename(kf))[0].lower()
+        module_to_file[base] = kf
+        # Also handle package directories
+        dir_name = os.path.basename(os.path.dirname(kf)).lower()
+        if dir_name not in module_to_file:
+            module_to_file[dir_name] = kf
+
     for sym in symbols:
         if sym.kind != "import":
             continue
-        # Try to match the import text to a known file
-        import_name = sym.name.lower()
-        for known in known_files:
-            known_base = os.path.splitext(os.path.basename(known))[0].lower()
-            # Match "import os" → known file "os.py"
-            if known_base in import_name or import_name in known_base:
-                target_id = f"{known}::{known_base}"
+        modules = _parse_import_module(sym)
+        for mod in modules:
+            mod_base = mod.split(".")[-1].lower()  # "os.path" -> "path"
+            if mod_base in module_to_file:
+                target_file = module_to_file[mod_base]
+                target_id = f"{target_file}::{mod_base}"
                 edges.append((abs_source, target_id, "IMPORTS_FROM"))
-                break
+                break  # One match per import
 
     return edges
 
@@ -531,15 +570,25 @@ def extract_depends_on_edges(
     edges: list[tuple[str, str, str]] = []
     abs_source = os.path.abspath(file_path)
 
+    # Build a lookup: module_name -> file_path
+    module_to_file: dict[str, str] = {}
+    for kf in known_files:
+        base = os.path.splitext(os.path.basename(kf))[0].lower()
+        module_to_file[base] = kf
+        dir_name = os.path.basename(os.path.dirname(kf)).lower()
+        if dir_name not in module_to_file:
+            module_to_file[dir_name] = kf
+
     for sym in symbols:
         if sym.kind != "import":
             continue
-        import_name = sym.name.lower()
-        for known in known_files:
-            known_base = os.path.splitext(os.path.basename(known))[0].lower()
-            if (known_base in import_name or import_name in known_base) and \
-               f"{known}::{known_base}" not in existing_targets:
-                edges.append((abs_source, f"{known}::{known_base}", "DEPENDS_ON"))
-                break
+        modules = _parse_import_module(sym)
+        for mod in modules:
+            mod_base = mod.split(".")[-1].lower()
+            if mod_base in module_to_file:
+                target_id = f"{module_to_file[mod_base]}::{mod_base}"
+                if target_id not in existing_targets:
+                    edges.append((abs_source, target_id, "DEPENDS_ON"))
+                    break
 
     return edges
