@@ -65,6 +65,47 @@ class ChatStore:
         """
         self._client.close()
 
+    def store_messages(
+        self,
+        messages: list[dict[str, str]],
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Batch store chat messages with metadata.
+
+        Each message dict must have 'role' and 'content' keys.
+        Missing 'timestamp' keys are filled with the current UTC time.
+        If session_id is None, a UUID is auto-generated.
+
+        Args:
+            messages: List of {role, content, timestamp?} dicts.
+            session_id: Session UUID. Auto-generated if not provided.
+
+        Returns:
+            Dict with 'stored' count and 'session_id'.
+        """
+        if session_id is None:
+            session_id = str(uuid.uuid4())
+
+        now = datetime.now(timezone.utc).isoformat()
+        ids = [str(uuid.uuid4()) for _ in messages]
+        documents = [msg["content"] for msg in messages]
+        metadatas = [
+            {
+                "session_id": session_id,
+                "role": msg.get("role", "user"),
+                "timestamp": msg.get("timestamp", now),
+            }
+            for msg in messages
+        ]
+
+        self._collection.add(
+            ids=ids,
+            documents=documents,
+            metadatas=metadatas,
+        )
+
+        return {"stored": len(messages), "session_id": session_id}
+
     def add_message(self, message: ChatMessage) -> str:
         """Store a chat message in ChromaDB.
 
