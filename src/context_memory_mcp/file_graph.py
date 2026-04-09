@@ -372,6 +372,157 @@ class FileGraph:
         """
         ...
 
+    def has_changed(self, file_path: str) -> bool:
+        """Check if a file has changed since last indexed.
+
+        Compares current SHA-256 hash against stored hash in _hash_index.
+
+        Args:
+            file_path: Path to the file to check.
+
+        Returns:
+            True if file content differs from stored hash, False otherwise.
+        """
+        file_path = os.path.abspath(file_path)
+        if not os.path.exists(file_path):
+            return True  # Removed files are considered "changed"
+        current_hash = FileNode.compute_hash(file_path)
+        stored = self._hash_index.get(file_path, {})
+        return current_hash != stored.get("hash")
+
+    def update_graph(self, directory: str, changed_files: list[str] | None = None) -> dict:
+        """Incrementally update the graph with changed files.
+
+        If changed_files is None, auto-detects changes by comparing
+        SHA-256 hashes against the stored index.
+
+        Args:
+            directory: Root directory to scan for changes.
+            changed_files: Optional explicit list of changed file paths.
+
+        Returns:
+            Summary dict with added, removed, updated, unchanged, total_files.
+        """
+        import logging
+        from datetime import datetime, timezone
+        from context_memory_mcp.parser import (
+            extract_imports_edges,
+            extract_contains_edges,
+            detect_tested_by,
+        )
+
+        directory = os.path.abspath(directory)
+        all_files = list(self._walk_code_files(directory))
+        all_known_files = set(all_files)
+
+        if changed_files is None:
+            # Auto-detect changes
+            changed_files = [f for f in all_files if self.has_changed(f)]
+            # Detect removed files
+            removed_files = [f for f in self._hash_index if f not in all_files]
+        else:
+            changed_files = [os.path.abspath(f) for f in changed_files]
+            removed_files = [f for f in self._hash_index if f not in all_files]
+
+        logging.info(
+            f"Updating graph: {len(changed_files)} changed, {len(removed_files)} removed"
+        )
+
+        # Remove changed/removed nodes from graph
+        files_to_remove = set(changed_files) | set(removed_files)
+        for f in files_to_remove:
+            nodes_to_remove = [
+                n for n in self.graph.nodes()
+                if self.graph.nodes[n].get("file_path") == f
+            ]
+            self.graph.remove_nodes_from(nodes_to_remove)
+            if f in self._hash_index:
+                del self._hash_index[f]
+
+        # Re-parse changed files that still exist
+        updated_count = 0
+        for f in changed_files:
+            if not os.path.exists(f):
+                continue
+            symbols = self._parser.parse_file(f)
+
+            # Create FileNode and update from disk
+            node = FileNode(path=f)
+            node.update_from_file(f)
+            node.language = self._parser.detect_language(f)
+
+            # Store in hash index
+            self._hash_index[f] = {
+                "hash": node.file_hash,
+                "language": node.language,
+                "size_bytes": node.size_bytes,
+                "last_modified": node.last_modified,
+            }
+
+            # Add file-level node to graph
+            self.graph.add_node(
+                f,
+                file_path=f,
+                name=os.path.basename(f),
+                kind="file",
+                language=node.language,
+                file_hash=node.file_hash,
+                size_bytes=node.size_bytes,
+                last_modified=node.last_modified,
+            )
+
+            # Add symbol nodes
+            for sym in symbols:
+                self.graph.add_node(
+                    sym.qualified_name,
+                    file_path=f,
+                    name=sym.name,
+                    kind=sym.kind,
+                    line_start=sym.line_start,
+                    line_end=sym.line_end,
+                )
+
+            updated_count += 1
+
+        # Re-extract edges for changed files
+        for f in changed_files:
+            if not os.path.exists(f):
+                continue
+            symbols = self._parser.parse_file(f)
+
+            # IMPORTS_FROM edges
+            import_edges = extract_imports_edges(symbols, all_known_files, f)
+            for src, tgt, etype in import_edges:
+                self.graph.add_edge(src, tgt, edge_type=etype)
+
+            # CONTAINS edges
+            contains_edges_list = extract_contains_edges(symbols, f)
+            for src, tgt, etype in contains_edges_list:
+                self.graph.add_edge(src, tgt, edge_type=etype)
+
+            # TESTED_BY edges
+            basename = os.path.basename(f)
+            if basename.startswith("test_") or basename.endswith("_test.py"):
+                tested_by_edges = detect_tested_by(f, all_known_files)
+                for src, tgt, etype in tested_by_edges:
+                    self.graph.add_edge(src, tgt, edge_type=etype)
+
+        removed_count = len(removed_files)
+        unchanged_count = len(all_files) - len(changed_files)
+
+        logging.info(
+            f"Graph updated: {updated_count} updated, {removed_count} removed, "
+            f"{unchanged_count} unchanged"
+        )
+
+        return {
+            "added": updated_count,
+            "removed": removed_count,
+            "updated": updated_count,
+            "unchanged": unchanged_count,
+            "total_files": len(all_files),
+        }
+
 
 # Module-level singleton pattern (same as chat_store.py)
 _graph: FileGraph | None = None

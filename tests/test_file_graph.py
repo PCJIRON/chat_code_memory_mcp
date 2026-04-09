@@ -339,3 +339,158 @@ class TestGraphSingleton:
         reset_graph()
         g2 = get_graph()
         assert g1 is not g2
+
+
+# ---------------------------------------------------------------------------
+# SHA-256 change detection and incremental update tests (T07)
+# ---------------------------------------------------------------------------
+
+class TestFileGraphChangeDetection:
+    """Tests for has_changed and update_graph."""
+
+    def test_has_changed_returns_true_for_unknown_file(self) -> None:
+        """has_changed returns True for files not in hash index."""
+        fg = FileGraph()
+        assert fg.has_changed("/nonexistent/file.py") is True
+
+    def test_has_changed_returns_false_for_unchanged_file(self, tmp_path) -> None:
+        """has_changed returns False when file matches stored hash."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+        assert fg.has_changed(str(f)) is False
+
+    def test_has_changed_returns_true_for_modified_file(self, tmp_path) -> None:
+        """has_changed returns True when file content differs."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+        # Modify the file
+        f.write_text("x = 2")
+        assert fg.has_changed(str(f)) is True
+
+    def test_has_changed_returns_true_for_removed_file(self, tmp_path) -> None:
+        """has_changed returns True when file has been removed."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+        # Remove the file
+        f.unlink()
+        assert fg.has_changed(str(f)) is True
+
+    def test_update_graph_no_changes(self, tmp_path) -> None:
+        """update_graph returns 0 updates when no files changed."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+        result = fg.update_graph(str(tmp_path))
+        assert result["added"] == 0
+        assert result["removed"] == 0
+        assert result["updated"] == 0
+        assert result["unchanged"] == 1
+        assert result["total_files"] == 1
+
+    def test_update_graph_one_changed_file(self, tmp_path) -> None:
+        """update_graph only re-parses changed files."""
+        f1 = tmp_path / "a.py"
+        f2 = tmp_path / "b.py"
+        f1.write_text("x = 1")
+        f2.write_text("y = 2")
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+        original_hash_a = fg._hash_index[str(f1)]["hash"]
+
+        # Modify only one file
+        f1.write_text("x = 999")
+        result = fg.update_graph(str(tmp_path))
+
+        assert result["updated"] == 1
+        assert result["unchanged"] == 1
+        # Hash should be updated
+        assert fg._hash_index[str(f1)]["hash"] != original_hash_a
+
+    def test_update_graph_explicit_changed_files(self, tmp_path) -> None:
+        """update_graph with explicit changed_files list."""
+        f1 = tmp_path / "a.py"
+        f2 = tmp_path / "b.py"
+        f1.write_text("x = 1")
+        f2.write_text("y = 2")
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+
+        # Explicitly mark f1 as changed
+        result = fg.update_graph(str(tmp_path), changed_files=[str(f1)])
+        assert result["updated"] == 1
+        assert result["unchanged"] == 1
+
+    def test_update_graph_removed_file(self, tmp_path) -> None:
+        """update_graph cleans up removed files."""
+        f1 = tmp_path / "a.py"
+        f2 = tmp_path / "b.py"
+        f1.write_text("x = 1")
+        f2.write_text("y = 2")
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+        assert str(f1) in fg._hash_index
+        assert str(f2) in fg._hash_index
+
+        # Remove f1
+        f1.unlink()
+        result = fg.update_graph(str(tmp_path))
+
+        assert result["removed"] == 1
+        assert str(f1) not in fg._hash_index
+        assert str(f2) in fg._hash_index
+        # Graph should not have nodes for removed file
+        file_nodes = [
+            n for n in fg.graph.nodes()
+            if fg.graph.nodes[n].get("file_path") == str(f1)
+        ]
+        assert len(file_nodes) == 0
+
+    def test_update_graph_preserves_unchanged_nodes(self, tmp_path) -> None:
+        """update_graph preserves nodes/edges for unchanged files."""
+        code_a = "def func_a(): pass\n"
+        code_b = "class ClassB:\n    def method_b(self): pass\n"
+        fa = tmp_path / "a.py"
+        fb = tmp_path / "b.py"
+        fa.write_text(code_a)
+        fb.write_text(code_b)
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+
+        # Get original node count
+        original_node_count = fg.graph.number_of_nodes()
+
+        # Modify only a.py
+        fa.write_text("def func_a(): return 42\n")
+        fg.update_graph(str(tmp_path))
+
+        # Node count should be similar (a.py nodes replaced, b.py preserved)
+        assert fg.graph.number_of_nodes() > 0
+
+    def test_update_graph_returns_summary_dict(self, tmp_path) -> None:
+        """update_graph returns correct summary structure."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+        result = fg.update_graph(str(tmp_path))
+        assert "added" in result
+        assert "removed" in result
+        assert "updated" in result
+        assert "unchanged" in result
+        assert "total_files" in result
+
+    def test_update_graph_empty_directory(self, tmp_path) -> None:
+        """update_graph handles empty directories."""
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+        result = fg.update_graph(str(tmp_path))
+        assert result["total_files"] == 0
+        assert result["added"] == 0
+        assert result["removed"] == 0
