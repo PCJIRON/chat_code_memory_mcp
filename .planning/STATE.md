@@ -8,6 +8,7 @@
 ## Phase 2 Results
 - **Plans:** 2-01-PLAN.md (10 tasks → 7 commits due to combining)
 - **Tests:** 17/17 PASSED in 28s
+- **UAT:** 2-UAT.md — PASS (14/14 requirements verified)
 - **Summary:** 2-01-SUMMARY.md
 - **MVP:** ✅ COMPLETE — ping, store_chat, query_chat all working
 
