@@ -12,7 +12,10 @@ from context_memory_mcp.chat_store import ChatStore
 @pytest.fixture()
 def store(tmp_path):
     """Create a ChatStore with an isolated temp directory."""
-    s = ChatStore(chroma_path=str(tmp_path / "chromadb"))
+    s = ChatStore(
+        chroma_path=str(tmp_path / "chromadb"),
+        session_index_path=str(tmp_path / "session_index.json"),
+    )
     yield s
     s.close()
 

@@ -7,6 +7,7 @@ using ChromaDB vector embeddings for semantic search.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Any
@@ -18,6 +19,9 @@ from pydantic import Field
 
 # Module-level singleton — instantiated once at server startup
 _store: ChatStore | None = None
+
+# Default session index path (overridable per-instance for testing)
+_DEFAULT_SESSION_INDEX_PATH = "./data/session_index.json"
 
 
 def get_store() -> ChatStore:
@@ -43,6 +47,7 @@ class ChatStore:
         self,
         collection_name: str = "chat_history",
         chroma_path: str = "./data/chromadb",
+        session_index_path: str = _DEFAULT_SESSION_INDEX_PATH,
     ) -> None:
         """Initialize the ChatStore.
 
@@ -52,6 +57,7 @@ class ChatStore:
         Args:
             collection_name: Name of the ChromaDB collection to use.
             chroma_path: Path for persistent storage. Defaults to ./data/chromadb.
+            session_index_path: Path for session index JSON. Defaults to ./data/session_index.json.
         """
         self._client = chromadb.PersistentClient(path=chroma_path)
         self._ef = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
@@ -60,6 +66,10 @@ class ChatStore:
             embedding_function=self._ef,
             metadata={"hnsw:space": "cosine"},
         )
+        # Session index for O(1) list_sessions()
+        self._session_index_path = session_index_path
+        self._session_index: dict[str, dict] = {}
+        self._load_session_index()
 
     def close(self) -> None:
         """Close the ChromaDB client to release SQLite file locks.
@@ -67,6 +77,59 @@ class ChatStore:
         CRITICAL on Windows: must be called before process exit.
         """
         self._client.close()
+
+    def _load_session_index(self) -> None:
+        """Load session index from disk. Rebuild from ChromaDB if missing."""
+        if os.path.exists(self._session_index_path):
+            with open(self._session_index_path, "r") as f:
+                data = json.load(f)
+                self._session_index = data.get("sessions", {})
+        else:
+            self._rebuild_session_index()
+
+    def _rebuild_session_index(self) -> None:
+        """Rebuild session index from ChromaDB collection."""
+        result = self._collection.get(include=["metadatas"])
+        self._session_index = {}
+        for meta in result["metadatas"]:
+            sid = meta["session_id"]
+            ts = meta.get("timestamp", "")
+            if sid not in self._session_index or ts > self._session_index[sid].get("last_message", ""):
+                existing = self._session_index.get(sid, {"message_count": 0})
+                self._session_index[sid] = {
+                    "message_count": existing["message_count"] + 1,
+                    "first_message": existing.get("first_message", ts),
+                    "last_message": ts,
+                }
+        self._save_session_index()
+
+    def _save_session_index(self) -> None:
+        """Save session index to disk."""
+        os.makedirs(os.path.dirname(self._session_index_path), exist_ok=True)
+        with open(self._session_index_path, "w") as f:
+            json.dump({
+                "sessions": self._session_index,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, f, indent=2)
+
+    def _update_session_index(self, session_id: str, timestamp: str) -> None:
+        """Update session index entry after store operation."""
+        if session_id not in self._session_index:
+            self._session_index[session_id] = {
+                "message_count": 0,
+                "first_message": timestamp,
+                "last_message": timestamp,
+            }
+        entry = self._session_index[session_id]
+        entry["message_count"] += 1
+        entry["last_message"] = timestamp
+        self._save_session_index()
+
+    def _remove_from_session_index(self, session_id: str) -> None:
+        """Remove session from index after delete operation."""
+        if session_id in self._session_index:
+            del self._session_index[session_id]
+            self._save_session_index()
 
     def store_messages(
         self,
@@ -118,6 +181,9 @@ class ChatStore:
             documents=documents,
             metadatas=metadatas,
         )
+
+        # Update session index
+        self._update_session_index(session_id, now)
 
         return {"stored": len(messages), "session_id": session_id}
 
@@ -207,16 +273,12 @@ class ChatStore:
         return filtered[:top_k]
 
     def list_sessions(self) -> list[str]:
-        """List all available conversation session IDs.
+        """List all available conversation session IDs from index (O(1)).
 
         Returns:
             Sorted list of distinct session IDs.
         """
-        result = self._collection.get(include=["metadatas"])
-        session_ids = set()
-        for meta in result["metadatas"]:
-            session_ids.add(meta["session_id"])
-        return sorted(session_ids)
+        return sorted(self._session_index.keys())
 
     def prune_sessions(
         self,
@@ -267,6 +329,9 @@ class ChatStore:
             self.delete_session(sess_id)
             pruned += 1
 
+        # Update session index after pruning
+        self._save_session_index()
+
         return {"pruned": pruned, "remaining": len(session_map) - pruned}
 
     def delete_session(self, session_id: str) -> int:
@@ -283,6 +348,8 @@ class ChatStore:
         if not ids_to_delete:
             return 0
         self._collection.delete(ids=ids_to_delete)
+        # Remove from session index
+        self._remove_from_session_index(session_id)
         return len(ids_to_delete)
 
 
