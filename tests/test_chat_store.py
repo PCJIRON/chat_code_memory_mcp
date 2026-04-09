@@ -281,3 +281,101 @@ def test_query_performance(store: ChatStore) -> None:
     store.query_messages("test", session_id="perf-sess-q", top_k=5)
     elapsed = time.time() - start
     assert elapsed < 5.0, f"Query took {elapsed:.2f}s — unexpectedly slow"
+
+
+# --- T04: prune_sessions ---
+
+
+def test_prune_sessions_by_date(store: ChatStore) -> None:
+    """Date-based pruning removes sessions before the given date."""
+    store.store_messages(
+        [{"role": "user", "content": "old msg", "timestamp": "2024-01-01T10:00:00+00:00"}],
+        session_id="old-session",
+    )
+    store.store_messages(
+        [{"role": "user", "content": "new msg", "timestamp": "2024-06-01T10:00:00+00:00"}],
+        session_id="new-session",
+    )
+    result = store.prune_sessions(before_date="2024-03-01T00:00:00+00:00")
+    assert result["pruned"] == 1
+    assert result["remaining"] == 1
+    sessions = store.list_sessions()
+    assert "old-session" not in sessions
+    assert "new-session" in sessions
+
+
+def test_prune_sessions_by_max(store: ChatStore) -> None:
+    """Max sessions pruning keeps only N most recent."""
+    for i in range(5):
+        store.store_messages(
+            [{"role": "user", "content": f"msg {i}", "timestamp": f"2024-0{i+1}-01T10:00:00+00:00"}],
+            session_id=f"sess-{i}",
+        )
+    result = store.prune_sessions(max_sessions=2)
+    assert result["pruned"] == 3
+    assert result["remaining"] == 2
+    sessions = store.list_sessions()
+    # Should keep the 2 most recent (sess-3, sess-4)
+    assert "sess-4" in sessions
+    assert "sess-3" in sessions
+    assert "sess-0" not in sessions
+    assert "sess-1" not in sessions
+    assert "sess-2" not in sessions
+
+
+def test_prune_sessions_combined(store: ChatStore) -> None:
+    """Combined: date filter first, then max_sessions cap."""
+    # Old sessions
+    for i in range(3):
+        store.store_messages(
+            [{"role": "user", "content": f"old {i}", "timestamp": f"2024-0{i+1}-01T10:00:00+00:00"}],
+            session_id=f"old-{i}",
+        )
+    # New sessions
+    for i in range(4):
+        store.store_messages(
+            [{"role": "user", "content": f"new {i}", "timestamp": f"2024-0{7+i}-01T10:00:00+00:00"}],
+            session_id=f"new-{i}",
+        )
+    # Date filter removes old-0, old-1, old-2 (before 2024-05), then cap to 2 of remaining
+    result = store.prune_sessions(
+        before_date="2024-05-01T00:00:00+00:00",
+        max_sessions=2,
+    )
+    assert result["pruned"] == 5  # 3 old + 2 of 4 new
+    assert result["remaining"] == 2
+
+
+def test_prune_sessions_nothing_to_prune(store: ChatStore) -> None:
+    """When no sessions match the prune criteria, nothing is deleted."""
+    store.store_messages(
+        [{"role": "user", "content": "msg", "timestamp": "2024-06-01T10:00:00+00:00"}],
+        session_id="keep-sess",
+    )
+    result = store.prune_sessions(before_date="2020-01-01T00:00:00+00:00")
+    assert result["pruned"] == 0
+    assert result["remaining"] == 1
+
+
+def test_prune_sessions_empty_store(store: ChatStore) -> None:
+    """Pruning an empty store returns zeros."""
+    result = store.prune_sessions()
+    assert result == {"pruned": 0, "remaining": 0}
+
+
+def test_prune_sessions_max_sessions_one(store: ChatStore) -> None:
+    """Keep only 1 most recent session."""
+    store.store_messages(
+        [{"role": "user", "content": "a", "timestamp": "2024-01-01T10:00:00+00:00"}],
+        session_id="first",
+    )
+    store.store_messages(
+        [{"role": "user", "content": "b", "timestamp": "2024-02-01T10:00:00+00:00"}],
+        session_id="second",
+    )
+    result = store.prune_sessions(max_sessions=1)
+    assert result["pruned"] == 1
+    assert result["remaining"] == 1
+    sessions = store.list_sessions()
+    assert "second" in sessions
+    assert "first" not in sessions

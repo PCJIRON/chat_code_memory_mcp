@@ -218,6 +218,57 @@ class ChatStore:
             session_ids.add(meta["session_id"])
         return sorted(session_ids)
 
+    def prune_sessions(
+        self,
+        before_date: str | None = None,
+        max_sessions: int | None = None,
+    ) -> dict:
+        """Remove old sessions to control collection size.
+
+        Args:
+            before_date: Delete sessions with last_message before this ISO 8601 date.
+            max_sessions: Keep only N most recent sessions.
+
+        Returns:
+            Dict with 'pruned' count and 'remaining' count.
+        """
+        # Get all session metadata (ID + last message timestamp)
+        result = self._collection.get(include=["metadatas"])
+        session_map: dict[str, str] = {}
+        for meta in result["metadatas"]:
+            sid = meta["session_id"]
+            ts = meta.get("timestamp", "")
+            if sid not in session_map or ts > session_map[sid]:
+                session_map[sid] = ts
+
+        if not session_map:
+            return {"pruned": 0, "remaining": 0}
+
+        to_delete = set()
+
+        # Apply date filter
+        if before_date:
+            for sid, last_msg in session_map.items():
+                if last_msg < before_date:
+                    to_delete.add(sid)
+
+        # Apply max_sessions cap (on remaining after date filter)
+        if max_sessions is not None:
+            remaining = [
+                (sid, ts) for sid, ts in session_map.items() if sid not in to_delete
+            ]
+            remaining.sort(key=lambda x: x[1], reverse=True)
+            for sid, _ in remaining[max_sessions:]:
+                to_delete.add(sid)
+
+        # Delete pruned sessions
+        pruned = 0
+        for sess_id in to_delete:
+            self.delete_session(sess_id)
+            pruned += 1
+
+        return {"pruned": pruned, "remaining": len(session_map) - pruned}
+
     def delete_session(self, session_id: str) -> int:
         """Delete all messages from a specific session.
 
