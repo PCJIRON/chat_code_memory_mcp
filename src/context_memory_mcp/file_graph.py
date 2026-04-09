@@ -10,7 +10,9 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 from context_memory_mcp.parser import ASTParser
 
@@ -636,3 +638,61 @@ def reset_graph() -> None:
     """Reset the global FileGraph singleton (useful for testing)."""
     global _graph
     _graph = None
+
+
+def register(mcp) -> None:
+    """Register file graph tools with the MCP server.
+
+    Registers track_files and get_file_graph MCP tools.
+
+    Args:
+        mcp: FastMCP server instance.
+    """
+
+    @mcp.tool(
+        name="track_files",
+        description="Build or update the file relationship graph for a directory",
+    )
+    async def track_files(
+        directory: Annotated[str, Field(description="Path to the directory to scan")],
+    ) -> str:
+        """Build or update file graph. Returns JSON summary.
+
+        Args:
+            directory: Path to the directory to scan.
+
+        Returns:
+            JSON string with status, file_count, node_count, edge_count.
+        """
+        graph = get_graph()
+        result = graph.build_graph(directory)
+        return json.dumps({"status": "ok", **result}, indent=2)
+
+    @mcp.tool(
+        name="get_file_graph",
+        description="Get the file relationship subgraph for a specific file",
+    )
+    async def get_file_graph_tool(
+        file_path: Annotated[str, Field(description="Path to the file to query")],
+    ) -> str:
+        """Get file subgraph. Returns JSON with nodes, edges, dependencies.
+
+        Args:
+            file_path: Path to the file to query.
+
+        Returns:
+            JSON string with subgraph data or error message.
+        """
+        graph = get_graph()
+        # Load from disk if graph is empty
+        if graph.graph.number_of_nodes() == 0:
+            try:
+                default_path = os.path.join(graph.root_path, "data", "file_graph.json")
+                graph = FileGraph.load(default_path)
+            except (FileNotFoundError, OSError):
+                return json.dumps(
+                    {"error": "No graph data available. Run track_files first."},
+                    indent=2,
+                )
+        result = graph.get_subgraph(file_path)
+        return json.dumps(result, indent=2)
