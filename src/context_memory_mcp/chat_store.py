@@ -191,46 +191,17 @@ class ChatStore:
 
         return filtered[:top_k]
 
-    def add_message(self, message: ChatMessage) -> str:
-        """Store a chat message in ChromaDB.
-
-        Args:
-            message: The ChatMessage to store.
+    def list_sessions(self) -> list[str]:
+        """List all available conversation session IDs.
 
         Returns:
-            The document ID of the stored message.
+            Sorted list of distinct session IDs.
         """
-        ...
-
-    def get_session_messages(self, session_id: str, limit: int = 100) -> list[ChatMessage]:
-        """Retrieve all messages from a specific session.
-
-        Args:
-            session_id: The session to retrieve messages from.
-            limit: Maximum number of messages to return.
-
-        Returns:
-            List of ChatMessage objects, ordered by timestamp.
-        """
-        ...
-
-    def search_similar(
-        self,
-        query: str,
-        session_id: str | None = None,
-        top_k: int = 5,
-    ) -> list[ChatMessage]:
-        """Search for semantically similar messages.
-
-        Args:
-            query: The search query text.
-            session_id: Optional filter to a specific session.
-            top_k: Number of results to return.
-
-        Returns:
-            List of ChatMessage objects sorted by similarity.
-        """
-        ...
+        result = self._collection.get(include=["metadatas"])
+        session_ids = set()
+        for meta in result["metadatas"]:
+            session_ids.add(meta["session_id"])
+        return sorted(session_ids)
 
     def delete_session(self, session_id: str) -> int:
         """Delete all messages from a specific session.
@@ -241,12 +212,9 @@ class ChatStore:
         Returns:
             Number of messages deleted.
         """
-        ...
-
-    def list_sessions(self) -> list[str]:
-        """List all available conversation session IDs.
-
-        Returns:
-            List of session ID strings.
-        """
-        ...
+        result = self._collection.get(where={"session_id": session_id})
+        ids_to_delete = result["ids"]
+        if not ids_to_delete:
+            return 0
+        self._collection.delete(ids=ids_to_delete)
+        return len(ids_to_delete)
