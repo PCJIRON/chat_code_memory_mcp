@@ -6,7 +6,12 @@ using ChromaDB vector embeddings for semantic search.
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
 from typing import Any
+
+import chromadb
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
 
 class ChatMessage:
@@ -40,7 +45,12 @@ class ChatMessage:
             timestamp: ISO 8601 timestamp.
             metadata: Additional metadata dictionary.
         """
-        ...
+        self.session_id = session_id
+        self.message_id = message_id
+        self.role = role
+        self.content = content
+        self.timestamp = timestamp
+        self.metadata = metadata or {}
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the message to a dictionary.
@@ -48,7 +58,14 @@ class ChatMessage:
         Returns:
             Dictionary representation suitable for JSON serialization.
         """
-        ...
+        return {
+            "session_id": self.session_id,
+            "message_id": self.message_id,
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChatMessage:
@@ -60,7 +77,14 @@ class ChatMessage:
         Returns:
             A new ChatMessage instance.
         """
-        ...
+        return cls(
+            session_id=data["session_id"],
+            message_id=data["message_id"],
+            role=data["role"],
+            content=data["content"],
+            timestamp=data["timestamp"],
+            metadata=data.get("metadata"),
+        )
 
 
 class ChatStore:
@@ -85,64 +109,18 @@ class ChatStore:
             collection_name: Name of the ChromaDB collection to use.
             chroma_path: Path for persistent storage. Defaults to ./data/chromadb.
         """
-        ...
+        self._chroma_path = chroma_path or "./data/chromadb"
+        self._collection_name = collection_name
+        self._client = chromadb.PersistentClient(path=self._chroma_path)
+        self._ef = SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
+        self._collection = self._client.get_or_create_collection(
+            name=self._collection_name,
+            embedding_function=self._ef,
+            metadata={"hnsw:space": "cosine"},
+        )
 
-    def add_message(self, message: ChatMessage) -> str:
-        """Store a chat message in ChromaDB.
-
-        Args:
-            message: The ChatMessage to store.
-
-        Returns:
-            The document ID of the stored message.
-        """
-        ...
-
-    def get_session_messages(self, session_id: str, limit: int = 100) -> list[ChatMessage]:
-        """Retrieve all messages from a specific session.
-
-        Args:
-            session_id: The session to retrieve messages from.
-            limit: Maximum number of messages to return.
-
-        Returns:
-            List of ChatMessage objects, ordered by timestamp.
-        """
-        ...
-
-    def search_similar(
-        self,
-        query: str,
-        session_id: str | None = None,
-        top_k: int = 5,
-    ) -> list[ChatMessage]:
-        """Search for semantically similar messages.
-
-        Args:
-            query: The search query text.
-            session_id: Optional filter to a specific session.
-            top_k: Number of results to return.
-
-        Returns:
-            List of ChatMessage objects sorted by similarity.
-        """
-        ...
-
-    def delete_session(self, session_id: str) -> int:
-        """Delete all messages from a specific session.
-
-        Args:
-            session_id: The session to delete.
-
-        Returns:
-            Number of messages deleted.
-        """
-        ...
-
-    def list_sessions(self) -> list[str]:
-        """List all available conversation session IDs.
-
-        Returns:
-            List of session ID strings.
-        """
-        ...
+    def close(self) -> None:
+        """Close the ChromaDB client, releasing SQLite file locks (critical on Windows)."""
+        self._client.close()
