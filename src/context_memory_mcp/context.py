@@ -7,7 +7,9 @@ concise, relevant context windows for LLM interactions.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 
 def _estimate_tokens(text: str) -> int:
@@ -264,10 +266,6 @@ def register(mcp: Any) -> None:
     Args:
         mcp: FastMCP server instance.
     """
-    from typing import Annotated
-
-    from pydantic import Field
-
     builder = ContextBuilder()
 
     @mcp.tool(

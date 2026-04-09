@@ -1,0 +1,14 @@
+OK: context_memory_mcp.chat_store
+OK: context_memory_mcp.file_graph
+OK: context_memory_mcp.parser
+OK: context_memory_mcp.embeddings
+OK: context_memory_mcp.context
+---
+DEP OK: mcp (unknown)
+DEP OK: chromadb (1.5.7)
+DEP OK: sentence-transformers (3.4.1)
+DEP OK: networkx (3.6.1)
+TOOLS: ['ping', 'store_chat', 'query_chat']
+PING TOOL: OK
+PYPROJECT: name=OK, ver=OK
+VERSION: 0.1.0
