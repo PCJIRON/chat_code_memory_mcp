@@ -1,0 +1,20 @@
+{
+  "project_name": "context-memory-mcp",
+  "created_at": "2026-04-09",
+  "mode": "quality",
+  "git_commit_format": "[GSD-{phase}-{plan}-T{task}] description",
+  "wave_execution": true,
+  "verification_gates": true,
+  "uat_required": true,
+  "deviation_tracking": true,
+  "tech_stack": {
+    "language": "python",
+    "mcp_framework": "fastmcp",
+    "vector_store": "chromadb",
+    "embeddings": "sentence-transformers",
+    "graph_store": "networkx|sqlite",
+    "parser": "tree-sitter"
+  },
+  "scope": "weekend-project",
+  "target_user": "personal"
+}
