@@ -532,10 +532,12 @@ class FileGraph:
 
         # Re-parse changed files that still exist
         updated_count = 0
+        new_symbols: dict[str, list] = {}  # file_path -> symbols (retain for edge extraction)
         for f in changed_files:
             if not os.path.exists(f):
                 continue
             symbols = self._parser.parse_file(f)
+            new_symbols[f] = symbols
 
             # Create FileNode and update from disk
             node = FileNode(path=f)
@@ -575,11 +577,14 @@ class FileGraph:
 
             updated_count += 1
 
-        # Re-extract edges for changed files
+        # Re-extract edges for changed files using retained symbols (NO re-parsing)
         for f in changed_files:
             if not os.path.exists(f):
                 continue
-            symbols = self._parser.parse_file(f)
+            symbols = new_symbols.get(f)
+            if symbols is None:
+                # Fallback: only re-parse if symbols weren't retained (shouldn't happen)
+                symbols = self._parser.parse_file(f)
 
             # IMPORTS_FROM edges
             import_edges = extract_imports_edges(symbols, all_known_files, f)
