@@ -1,18 +1,23 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PHASE_3_PLANNED — research, plan, and validation complete
-- **Last Action**: Phase 3 plan committed (10 tasks, 3 waves)
-- **Next Step**: `/gsd:execute-phase 3` (implement the plan)
+- **Status**: PHASE_3_WAVE1_COMPLETE — Parser Foundation implemented and tested
+- **Last Action**: Phase 3 Wave 1 (T01–T03) executed — 3 commits, 27/27 tests PASSED
+- **Next Step**: `/gsd:execute-phase 3` Wave 2 (T04–T07: Graph Foundation)
 
 ## Phase 3 Plan Summary
 - **Research:** 3-RESEARCH.md — `get_binding()` pattern confirmed working, Query API avoided, NetworkX 3.x compatibility verified
 - **Plan:** 3-01-PLAN.md (10 tasks, 3 waves, validation PASS_WITH_NOTES)
 - **Validation:** 3-01-VALIDATION.md — PASS_WITH_NOTES (3 major items addressed during planning)
 - **Waves:**
-  - Wave 1: T01–T03 (Parser Foundation)
-  - Wave 2: T04–T07 (Graph Foundation)
+  - Wave 1: T01–T03 (Parser Foundation) ✅ COMPLETE
+  - Wave 2: T04–T07 (Graph Foundation) — NEXT
   - Wave 3: T08–T10 (Persistence & MCP Integration)
+- **Wave 1 Commits:**
+  - T01: `5a8e1c8` — Implement ParsedSymbol data class with qualified_name property
+  - T02: `3bdb4e4` — Implement language detection and tree-sitter initialization
+  - T03: `3f04fcf` — Implement parse_file and symbol extraction with tree-sitter
+- **Wave 1 Summary:** 3-01-WAVE1-SUMMARY.md
 
 ## Phase 2 Results
 - **Plans:** 2-01-PLAN.md (10 tasks → 7 commits due to combining)
@@ -56,7 +61,7 @@ MCP server that stores chat history in ChromaDB and tracks file changes using gr
 |-------|--------|-------|-------|
 | 1 — Foundation | ✅ COMPLETE | 1 | 6/6 |
 | 2 — Chat Memory | ✅ COMPLETE | — | 9/9 |
-| 3 — File Graph | Context captured | — | 0/10 |
+| 3 — File Graph | Wave 1 complete | — | 3/10 |
 | 4 — Integration & Polish | Not started | — | 0/9 |
 
 ## Milestones
