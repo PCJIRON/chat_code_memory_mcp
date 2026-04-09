@@ -1,9 +1,9 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PHASE_4_WAVE2_COMPLETE — Wave 2 (T05-T07) executed and verified
-- **Last Action**: 4-01-WAVE2-SUMMARY.md created, 160 tests passing
-- **Next Step**: `/gsd:execute-phase 4` Wave 3 (T08-T11: query validation + unit tests)
+- **Status**: PHASE_4_WAVE3_COMPLETE — Wave 3 (T08-T10) executed and verified
+- **Last Action**: 4-01-WAVE3-SUMMARY.md created, 173 tests passing
+- **Next Step**: `/gsd:execute-phase 4` Wave 4 (T12-T13: Integration tests + README + checkpoint)
 
 ## Phase 4 Plan Summary
 - **Plan:** 4-01-PLAN.md (13 tasks + checkpoint, 4 waves, validation PASS_WITH_NOTES)
@@ -109,7 +109,7 @@ MCP server that stores chat history in ChromaDB and tracks file changes using gr
 | 1 — Foundation | ✅ COMPLETE | 1 | 6/6 |
 | 2 — Chat Memory | ✅ COMPLETE | — | 9/9 |
 | 3 — File Graph | ✅ COMPLETE | — | 10/10 |
-| 4 — Integration & Polish | In Progress | — | 7/13 (Wave 1 + Wave 2 complete) |
+| 4 — Integration & Polish | In Progress | — | 10/13 (Wave 1 + Wave 2 + Wave 3 complete) |
 
 ## Phase 4 Wave 1 Commits
 - T01: `e17aee6` — implement get_minimal_context compression (also includes T02, T03 code)
@@ -122,6 +122,11 @@ MCP server that stores chat history in ChromaDB and tracks file changes using gr
 - T05: `598f6e5` — optimize list_sessions with session index JSON
 - T06: `d77b581` — fix import matching with AST node parsing
 - T07: `801d943` — eliminate double-parsing in update_graph
+
+## Phase 4 Wave 3 Commits
+- T08: `6b54df6` — add conversation_id filter and date validation to query_chat
+- T09: `a29b2e6` — add unit tests for chat_store prune/index/validation (+8 tests)
+- T10: `f766205` — add unit tests for file_graph fixes (+5 tests)
 
 ## Milestones
 - [x] M1: Server starts, ping works (Phase 1)
