@@ -85,7 +85,19 @@ class ChatStore:
 
         Returns:
             Dict with 'stored' count and 'session_id'.
+
+        Raises:
+            ValueError: If messages is empty or any message is missing 'content'.
         """
+        if not messages:
+            raise ValueError("messages list cannot be empty")
+
+        for i, msg in enumerate(messages):
+            if "content" not in msg:
+                raise ValueError(f"Message {i} is missing required 'content' key")
+            if "role" not in msg:
+                msg["role"] = "user"
+
         if session_id is None:
             session_id = str(uuid.uuid4())
 

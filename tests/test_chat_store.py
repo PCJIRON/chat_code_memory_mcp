@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
 
 import pytest
 
@@ -44,6 +43,27 @@ def test_store_messages_batch(store: ChatStore) -> None:
     ]
     result = store.store_messages(msgs, session_id="batch-sess")
     assert result["stored"] == 3
+
+
+def test_store_messages_empty_raises(store: ChatStore) -> None:
+    """Empty messages list should raise ValueError."""
+    with pytest.raises(ValueError, match="messages list cannot be empty"):
+        store.store_messages([], session_id="empty-sess")
+
+
+def test_store_messages_missing_content_raises(store: ChatStore) -> None:
+    """Message without 'content' key should raise ValueError."""
+    with pytest.raises(ValueError, match="missing required 'content' key"):
+        store.store_messages([{"role": "user"}], session_id="bad-sess")
+
+
+def test_store_messages_auto_role(store: ChatStore) -> None:
+    """Message without 'role' key should default to 'user'."""
+    result = store.store_messages([{"content": "no role specified"}], session_id="auto-role")
+    assert result["stored"] == 1
+    # Verify the message was stored with role="user"
+    results = store.query_messages("no role", session_id="auto-role", top_k=1)
+    assert results[0]["role"] == "user"
 
 
 def test_store_messages_persistence(store: ChatStore, tmp_path) -> None:
@@ -93,6 +113,21 @@ def test_query_messages_top_k(store: ChatStore) -> None:
     store.store_messages(msgs, session_id="topk-sess")
     results = store.query_messages("number", session_id="topk-sess", top_k=3)
     assert len(results) == 3
+
+
+def test_query_messages_no_matches(store: ChatStore) -> None:
+    """Query always returns results due to semantic search nature (no true empty)."""
+    store.store_messages(
+        [{"role": "user", "content": "hello world"}], session_id="no-match-sess"
+    )
+    # Semantic search always returns something within the session
+    results = store.query_messages(
+        "xyzzy plugh nothingrelevant", session_id="no-match-sess", top_k=5
+    )
+    # Results will have low similarity scores (high distance)
+    assert len(results) <= 1  # Only one message stored, so at most 1 result
+    if results:
+        assert results[0]["similarity"] < 0.5  # Low similarity expected
 
 
 # --- Session Isolation ---
