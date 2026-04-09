@@ -118,7 +118,40 @@ Phase 2 and Phase 3 are **independent** and can be worked on in parallel (separa
 | 4.8 End-to-end integration test: start server → all 5 tools → verify outputs | FR-5.2 | `[GSD-4-01-T8] add end-to-end integration test for all MCP tools` |
 | 4.9 Write `README.md` — setup, usage, tool descriptions, examples | — | `[GSD-4-01-T9] write README with setup and usage docs` |
 
-**Phase 4 Deliverable:** Token-efficient context retrieval, date/conversation filtering, test coverage, and documentation. **Project complete.**
+**Phase 4 Deliverable:** Token-efficient context retrieval, date/conversation filtering, test coverage, and documentation. **MVP complete.**
+
+---
+
+## Phase 5: Auto Save, Track & Retrieve
+
+**Theme:** Zero-touch automation — every chat auto-saved, every file change auto-detected, every request auto-enriched with context
+**Goal:** Remove ALL manual tool calls — save, track, retrieve happen automatically in background
+**Estimated Duration:** 2–3 hours
+**Success Criteria:** User chats → automatically saved. Files change → automatically tracked. Every request → automatically enriched with stored context. No LLM manual calls needed.
+
+| Task | Requirement | Commit Title |
+|---|---|---|
+| 5.1 Create `src/config.py`: load/save `./data/config.json` with auto settings | — | `[GSD-5-01-T1] implement config manager for auto settings` |
+| 5.2 Create `src/auto_save.py`: `AutoSaveMiddleware` — intercept tool calls, buffer & save to ChromaDB | FR-1.1, FR-1.4 | `[GSD-5-01-T2] implement auto-save middleware for tool interception` |
+| 5.3 Create `src/auto_retrieve.py`: `ContextInjector` — auto-query ChromaDB before each request, append ~300 token context | FR-4.1, FR-4.3 | `[GSD-5-01-T3] implement auto-retrieve context injector` |
+| 5.4 Create `src/file_watcher.py`: `watchdog`-based background file monitor — auto-trigger `track_files` on modification | FR-3.1, FR-3.4 | `[GSD-5-01-T4] implement background file watcher for auto-tracking` |
+| 5.5 Wire auto-save + auto-retrieve + file watcher into `mcp_server.py` | FR-5.2 | `[GSD-5-01-T5] wire auto features into MCP server startup` |
+| 5.6 End-to-end test: chat → auto-save → auto-retrieve → file change → auto-track → verify all automatic | FR-1, FR-3, FR-4 | `[GSD-5-01-T6] add e2e tests for automatic save/track/retrieve` |
+| 5.7 Update README.md — document automatic behavior, configuration options | — | `[GSD-5-01-T7] update README with automatic mode documentation` |
+
+**Phase 5 Deliverable:** Fully automatic save, track, and retrieve — zero manual tool calls needed. **True zero-touch MCP server.**
+
+---
+
+## Milestones
+
+| Milestone | Trigger | Expected |
+|---|---|---|
+| **M1: Server Runs** | Phase 1 complete — `python -m` starts, ping responds | Day 1, morning |
+| **M2: MVP** | Phase 2 complete — store + query chat messages with persistence | Day 1, evening |
+| **M3: File Graph** | Phase 3 complete — parse, build, track, query file relationships | Day 2, evening |
+| **M4: Ship** | Phase 4 complete — all tools tested, token-efficient, documented | Day 3 |
+| **M5: Zero-Touch** | Phase 5 complete — auto-save, auto-track, auto-retrieve | Day 3, evening |
 
 ---
 

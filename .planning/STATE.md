@@ -1,9 +1,16 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PROJECT_SHIPPED — All 4 phases complete and shipped ✅
-- **Last Action**: Phase 4 shipped — UAT PASS, Review PASS (0 MAJOR), 191 tests, README complete
-- **Next Step**: Project is complete. No further action required.
+- **Status**: PHASE_5_ADDED — Phase 5 (Auto Save, Track & Retrieve) added to roadmap
+- **Last Action**: Phase 5 roadmap entry created — 7 tasks, zero-touch automation
+- **Next Step**: `/gsd:plan-phase 5` to create atomic task plan
+
+## Phase 5 Scope
+- **Auto-Save:** Intercept every tool call → automatically save to ChromaDB
+- **Auto-Retrieve:** Query ChromaDB before each request → append ~300 token context
+- **Auto-Track:** `watchdog` background thread → detect file changes → auto-trigger `track_files`
+- **Config:** `./data/config.json` — toggle features, configure watch dirs, adjust context budget
+- **Goal:** Zero manual tool calls — everything automatic
 
 ## Project Final Stats
 - **Phases:** 4/4 shipped
