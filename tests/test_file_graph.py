@@ -844,3 +844,116 @@ class MyClass:
                 )
                 data = json.loads(output)
                 assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# T10: Import matching and double-parse fix tests
+# ---------------------------------------------------------------------------
+
+
+class TestImportMatchingASTNodes:
+    """Tests for T06 import matching using AST nodes (not substring matching)."""
+
+    def test_import_matching_uses_ast_nodes(self, tmp_path) -> None:
+        """Import matching correctly identifies modules using AST-parsed names."""
+        from context_memory_mcp.file_graph import FileGraph
+        from context_memory_mcp.parser import ASTParser
+
+        # Create a module file
+        (tmp_path / "utils.py").write_text("def helper(): pass\n")
+        # Create a file that imports it
+        (tmp_path / "main.py").write_text("import utils\n\ndef main():\n    utils.helper()\n")
+
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+
+        # Should have an IMPORTS_FROM edge from main.py to utils
+        edge_types = {data.get("edge_type") for _, _, data in fg.graph.edges(data=True)}
+        assert "IMPORTS_FROM" in edge_types
+
+    def test_import_matching_no_false_positives(self, tmp_path) -> None:
+        """Import matching does not create false positive edges."""
+        from context_memory_mcp.file_graph import FileGraph
+
+        # Create two unrelated files
+        (tmp_path / "alpha.py").write_text("x = 1\n")
+        (tmp_path / "beta.py").write_text("y = 2\n")
+
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+
+        # No IMPORTS_FROM edges should exist between unrelated files
+        import_edges = [
+            (s, t) for s, t, d in fg.graph.edges(data=True)
+            if d.get("edge_type") == "IMPORTS_FROM"
+        ]
+        # There should be no imports between alpha.py and beta.py
+        for src, tgt in import_edges:
+            assert not (
+                ("alpha" in src and "beta" in tgt) or
+                ("beta" in src and "alpha" in tgt)
+            )
+
+    def test_import_matching_from_import_statement(self, tmp_path) -> None:
+        """Import matching handles 'from X import Y' statements."""
+        from context_memory_mcp.file_graph import FileGraph
+
+        (tmp_path / "models.py").write_text("class User: pass\n")
+        (tmp_path / "app.py").write_text("from models import User\n\ndef create(): pass\n")
+
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+
+        edge_types = {data.get("edge_type") for _, _, data in fg.graph.edges(data=True)}
+        assert "IMPORTS_FROM" in edge_types
+
+
+class TestDoubleParseFix:
+    """Tests for T07 double-parse fix — parse_file called only once per file."""
+
+    def test_update_graph_no_double_parse(self, tmp_path) -> None:
+        """update_graph parses each file only once (no double-parse)."""
+        from unittest.mock import patch
+
+        from context_memory_mcp.file_graph import FileGraph
+        from context_memory_mcp.parser import ASTParser
+
+        (tmp_path / "a.py").write_text("x = 1\n")
+        (tmp_path / "b.py").write_text("y = 2\n")
+
+        fg = FileGraph()
+        fg.build_graph(str(tmp_path))
+
+        # Modify one file
+        (tmp_path / "a.py").write_text("x = 999\n")
+
+        # Patch parse_file to count calls
+        with patch.object(ASTParser, "parse_file", wraps=fg._parser.parse_file) as mock_parse:
+            fg.update_graph(str(tmp_path))
+
+        # Should parse only the changed file (a.py), not b.py
+        parse_calls = mock_parse.call_count
+        assert parse_calls == 1
+
+    def test_update_graph_produces_same_edges(self, tmp_path) -> None:
+        """update_graph produces the same edges as build_graph (regression test)."""
+        from context_memory_mcp.file_graph import FileGraph
+
+        code_a = "import os\n\ndef func_a(): pass\n"
+        code_b = "class ClassB:\n    def method_b(self): pass\n"
+        (tmp_path / "a.py").write_text(code_a)
+        (tmp_path / "b.py").write_text(code_b)
+
+        # Build graph fresh
+        fg1 = FileGraph()
+        fg1.build_graph(str(tmp_path))
+        build_edges = set(fg1.graph.edges())
+
+        # Update graph (no changes)
+        fg2 = FileGraph()
+        fg2.build_graph(str(tmp_path))
+        fg2.update_graph(str(tmp_path))
+        update_edges = set(fg2.graph.edges())
+
+        # Edge sets should be identical
+        assert build_edges == update_edges
