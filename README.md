@@ -7,6 +7,7 @@ An MCP server that stores chat history in ChromaDB and tracks file changes using
 - 🗣️ **Chat History Storage** — Store and semantically search conversation history using ChromaDB vector embeddings
 - 📁 **File Change Tracking** — Build and query file relationship graphs with NetworkX
 - 🔍 **Token-Efficient Context** — Get compressed context optimized for LLM consumption (minimal/summary/full)
+- 🤖 **Automatic Mode** — Zero-touch auto-save, auto-retrieve, and auto-track (Phase 5)
 - 🏠 **Local-First** — All data stored locally, no cloud APIs, no external dependencies beyond pip packages
 - 🔌 **MCP Protocol** — Stdio-based transport compatible with any MCP client
 
@@ -162,7 +163,7 @@ List all available conversation session IDs.
 
 **Parameters:** None
 
-**Returns:** `["sess-abc123", "sess-def456", ...]` (sorted alphabetically)
+**Returns:** Sorted list of session IDs.
 
 ---
 
@@ -172,9 +173,9 @@ Delete all messages from a specific session.
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `session_id` | `str` | Yes | The session to delete |
+| `session_id` | `str` | Yes | Session UUID to delete |
 
-**Returns:** Number of messages deleted (int)
+**Returns:** Number of messages deleted.
 
 ---
 
@@ -187,78 +188,21 @@ Remove old sessions to control collection size.
 | `before_date` | `str | None` | `None` | Delete sessions with last_message before this ISO 8601 date |
 | `max_sessions` | `int | None` | `None` | Keep only N most recent sessions |
 
-**Example:**
-```json
-{
-  "max_sessions": 5
-}
-```
-
-**Returns:** `{"pruned": 3, "remaining": 5}`
-
----
-
-### Context Retrieval
-
-#### `get_context`
-Get token-efficient context for a query. Combines recent chat history and metadata into a compressed window.
-
-**Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | `str` | — | Search query |
-| `session_id` | `str | None` | `None` | Optional session filter |
-| `detail_level` | `str` | `"summary"` | Output detail level: `"minimal"` (~100 tokens), `"summary"` (~300 tokens), `"full"` (raw JSON) |
-| `active_files` | `list[str] | None` | `None` | Optional active file paths |
-
-**Example:**
-```json
-{
-  "query": "How does the file graph work?",
-  "detail_level": "minimal",
-  "active_files": ["file_graph.py", "parser.py"]
-}
-```
-
-**Returns:**
-```json
-{
-  "query": "How does the file graph work?",
-  "content": "Query: How does the file graph work?\nActive files: 2",
-  "token_count": 12,
-  "detail_level": "minimal"
-}
-```
+**Returns:** `{"pruned": N, "remaining": M}`
 
 ---
 
 ### File Graph
 
 #### `track_files`
-Build or update the file relationship graph for a directory. Parses all code files, extracts symbols (classes, functions, imports), and builds a NetworkX DiGraph with relationships.
+Build or update the file relationship graph for a directory.
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `directory` | `str` | Yes | Path to the directory to scan |
 
-**Example:**
-```json
-{
-  "directory": "/path/to/project"
-}
-```
-
-**Returns:**
-```json
-{
-  "status": "ok",
-  "file_count": 15,
-  "node_count": 130,
-  "edge_count": 60,
-  "built_at": "2024-06-15T10:00:00+00:00"
-}
-```
+**Returns:** JSON with status, file_count, node_count, edge_count.
 
 ---
 
@@ -270,33 +214,101 @@ Get the file relationship subgraph for a specific file.
 |-----------|------|----------|-------------|
 | `file_path` | `str` | Yes | Path to the file to query |
 
-**Example:**
-```json
-{
-  "file_path": "/path/to/project/src/chat_store.py"
-}
-```
-
-**Returns:**
-```json
-{
-  "file": "/abs/path/chat_store.py",
-  "nodes": [...],
-  "edges": [...],
-  "dependencies": ["parser.py"],
-  "dependents": ["mcp_server.py"],
-  "impact_summary": {
-    "direct_dependencies": 1,
-    "direct_dependents": 1
-  }
-}
-```
+**Returns:** JSON with nodes, edges, dependencies, dependents.
 
 > **Note:** Run `track_files` first before using `get_file_graph`. If no graph data is available, an error message is returned.
 
 ---
 
+### Context Retrieval
+
+#### `get_context`
+Get token-efficient context for a query.
+
+**Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query` | `str` | Yes | Search query |
+| `session_id` | `str | None` | `None` | Optional session filter |
+| `detail_level` | `str` | `"summary"` | `minimal`, `summary`, or `full` |
+| `active_files` | `list[str] | None` | `None` | Optional active file paths |
+
+**Returns:** JSON with query, content, token_count, detail_level.
+
+---
+
+## Automatic Mode (Phase 5)
+
+Phase 5 introduces **fully automatic behavior** — no manual tool calls needed for save, track, or retrieve. Every conversation is auto-saved, every file change is auto-detected, and every request is auto-enriched with stored context.
+
+### Auto-Save
+Every MCP tool call and response is **automatically captured and saved** to ChromaDB. No need to call `store_chat` manually.
+
+- **How it works:** Server-side interception via monkey-patched `mcp.call_tool`
+- **Trigger:** On tool response (after any MCP tool executes)
+- **Buffering:** Tool call + response are buffered together, flushed on response
+- **Session:** Auto-generated UUID, isolated from manual `store_chat` sessions
+- **Truncation:** Large results (>500 chars) are truncated with "..."
+
+### Auto-Retrieve
+Before each tool call, **~300 tokens of relevant context** are automatically queried from ChromaDB and appended to the response.
+
+- **How it works:** `ContextInjector` queries ChromaDB using `format_with_detail(level="summary")`
+- **Token Budget:** ~300 tokens by default (configurable via `auto_context_tokens`)
+- **Skipped Tools:** `ping`, `list_sessions`, `get_file_graph`, `delete_session` (non-query tools don't benefit)
+- **Marker:** Context is clearly marked with `[Auto-Context]` header
+
+### Auto-Track
+A **background file watcher** monitors your code directories and automatically updates the file graph when files change.
+
+- **How it works:** `watchdog` Observer runs in a separate OS thread (daemon)
+- **Debounce:** 0.5s debounce handles OneDrive delayed/duplicate events
+- **Ignored Dirs:** `.git`, `__pycache__`, `.venv`, `node_modules`, `data`
+- **Clean Shutdown:** Observer stopped and joined on server exit
+
+### Configuration
+
+All automatic features are controlled by `./data/config.json`:
+
+```json
+{
+  "auto_save": true,
+  "auto_retrieve": true,
+  "auto_track": true,
+  "auto_context_tokens": 300,
+  "watch_dirs": ["./src"],
+  "watch_ignore_dirs": [".git", "__pycache__", ".venv", "node_modules", "data"],
+  "flush_interval_seconds": 30
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auto_save` | `bool` | `true` | Enable automatic tool call/response saving |
+| `auto_retrieve` | `bool` | `true` | Enable automatic context injection |
+| `auto_track` | `bool` | `true` | Enable background file watching |
+| `auto_context_tokens` | `int` | `300` | Token budget for auto-injected context (clamped 50–2000) |
+| `watch_dirs` | `list[str]` | `["./src"]` | Directories to monitor for file changes |
+| `watch_ignore_dirs` | `list[str]` | See above | Directory names to skip during watching |
+| `flush_interval_seconds` | `int` | `30` | Buffer flush interval (min 5s) |
+
+### Toggling Features
+
+To disable a feature, set it to `false` in `./data/config.json`:
+
+```json
+{
+  "auto_save": false,
+  "auto_retrieve": true,
+  "auto_track": false
+}
+```
+
+> **No Breaking Changes:** All features are opt-in via config. Default: all enabled. Manual tool calls (`store_chat`, `query_chat`, `track_files`) continue to work normally.
+
 ## Architecture
+
+### With Automatic Mode
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -307,6 +319,16 @@ Get the file relationship subgraph for a specific file.
                                ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     MCP Server (FastMCP)                            │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │              _intercepted_call_tool (monkey-patched)          │  │
+│  │                                                               │  │
+│  │  1. ContextInjector.inject() → ~300 tokens appended           │  │
+│  │  2. AutoSaveMiddleware.on_tool_call() → buffer                │  │
+│  │  3. Original Tool Execution → Response                        │  │
+│  │  4. AutoSaveMiddleware.on_tool_response() → flush to ChromaDB │  │
+│  │  5. Return result (+ context if string)                       │  │
+│  └───────────────────────────────────────────────────────────────┘  │
 │                                                                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────────┐ │
 │  │   Core Tools  │  │  Chat Memory │  │     File Graph Tools      │ │
@@ -319,8 +341,8 @@ Get the file relationship subgraph for a specific file.
 │  │              │  │  • get_context│  │  │  • DiGraph            ││ │
 │  └──────┬───────┘  └──────┬───────┘  │  │  • SHA-256 tracking  ││ │
 │         │                 │          │  │  • Incremental update ││ │
-│         │                 │          │  └───────────┬───────────┘│ │
-│         │                 │          └──────────────┼────────────┘ │
+│         │                 │          └───────────┬───────────┘│ │
+│         │                 │                        │              │
 │         │                 ▼                        │              │
 │         │          ┌──────────────┐               │              │
 │         │          │  Context System│               │              │
@@ -341,7 +363,15 @@ Get the file relationship subgraph for a specific file.
 │  • Chat messages    │               │  • NetworkX DiGraph         │
 │  • Semantic search  │               │  • ASTParser (tree-sitter)  │
 │  • Session index    │               │  • JSON persistence         │
-└─────────────────────┘               └─────────────────────────────┘
+│  • Auto-save buffer │               │                             │
+└─────────────────────┘               └──────────────┬──────────────┘
+                                                     │
+                                          ┌──────────▼──────────────┐
+                                          │   FileWatcher (thread)  │
+                                          │  • watchdog Observer    │
+                                          │  • 0.5s debounce        │
+                                          │  • Auto-track handler   │
+                                          └─────────────────────────┘
 ```
 
 ### Data Flow
@@ -351,6 +381,9 @@ Get the file relationship subgraph for a specific file.
 3. **Context Retrieval:** Client → `get_context` → ContextBuilder → Compression → Formatted output
 4. **File Tracking:** Client → `track_files` → ASTParser (tree-sitter) → FileGraph (NetworkX) → JSON
 5. **File Query:** Client → `get_file_graph` → Graph traversal → Dependencies/dependents → Subgraph
+6. **Auto-Save:** Tool call/response → AutoSaveMiddleware → Buffer → ChromaDB (automatic)
+7. **Auto-Retrieve:** Tool call → ContextInjector → ~300 tokens appended → Response (automatic)
+8. **Auto-Track:** File change → watchdog Observer → debounce → FileGraph.update_graph (automatic)
 
 ## Configuration
 
@@ -361,6 +394,7 @@ Get the file relationship subgraph for a specific file.
 | ChromaDB path | `./data/chromadb` | Auto-created on first store |
 | Session index | `./data/session_index.json` | Auto-created on first store |
 | File graph | `./data/file_graph.json` | Auto-saved by `save()` |
+| Auto config | `./data/config.json` | Auto-created with defaults |
 
 ### Token Estimation
 
@@ -378,142 +412,85 @@ Context compression uses a **4 chars/token heuristic** for fast estimation. This
 
 ### Q: Why does the first run take ~25 seconds?
 
-A: The `SentenceTransformerEmbeddingFunction` downloads ~80MB of model weights (`all-MiniLM-L6-v2`) on first instantiation. This is a one-time cost. Subsequent runs are fast.
+The `SentenceTransformerEmbeddingFunction` downloads ~80MB of model weights on first instantiation. This is a one-time cost — subsequent runs are fast.
 
-### Q: Can I use this with multiple projects?
+### Q: Can I disable automatic features?
 
-A: Yes. Each project should have its own instance of the server with separate data directories. Use different `chroma_path` values per project to avoid collisions.
+Yes. Set `auto_save`, `auto_retrieve`, or `auto_track` to `false` in `./data/config.json`. All features are independent.
 
-### Q: How do I back up my chat history?
+### Q: How do I adjust the context token budget?
 
-A: Copy the `./data/` directory. It contains:
-- `chromadb/` — ChromaDB SQLite database with all messages
-- `session_index.json` — Session metadata cache
-- `file_graph.json` — Persisted file relationship graph (if saved)
+Change `auto_context_tokens` in `./data/config.json`. Valid range: 50–2000 (clamped automatically).
 
-### Q: What languages does the file parser support?
+### Q: Why is my file watcher not detecting changes on OneDrive?
 
-A: The `ASTParser` uses tree-sitter and supports: Python, JavaScript, TypeScript, TSX, Go, Rust, Java, C, C++. Import matching is currently optimized for Python files.
+OneDrive produces delayed and duplicate file events. The built-in 0.5s debounce handles this. If you still see issues, increase `flush_interval_seconds`.
 
-### Q: How do I reduce the size of my ChromaDB collection?
+### Q: Can I watch multiple directories?
 
-A: Use `prune_sessions` with `max_sessions` or `before_date` to delete old sessions. The session index is automatically updated.
-
-### Q: Why does `query_chat` sometimes return low-similarity results?
-
-A: Semantic search always returns the most similar results within the specified session/filter. If only a few messages exist in the session, those will be returned even with low similarity scores. Use `date_from`/`date_to` filters to narrow the search window.
+Yes. Add paths to `watch_dirs` in `./data/config.json`:
+```json
+{
+  "watch_dirs": ["./src", "./tests", "./scripts"]
+}
+```
 
 ## Troubleshooting
 
-### Model download fails or hangs
+### Windows DLL Errors
 
-**Symptom:** `SentenceTransformerEmbeddingFunction` fails to initialize.
+On Windows, you may see DLL loading errors from `torch`. This is a known issue with the sentence-transformers dependency. The server still functions correctly — these are warnings, not fatal errors.
 
-**Fix:**
-1. Check your internet connection
-2. Set `SENTENCE_TRANSFORMERS_HOME` to a writable directory
-3. Try running with `HF_HUB_DISABLE_PROGRESS_BARS=1` to reduce output noise
-4. The model will be cached after first download — subsequent runs are fast
+### ChromaDB Lock Issues
 
-### ChromaDB "database is locked" on Windows
+If you see "database is locked" errors on Windows, ensure no other process is holding a lock on `./data/chromadb`. You may need to close the previous server instance or delete the lock file.
 
-**Symptom:** `sqlite3.OperationalError: database is locked`
+### File Watcher Not Starting
 
-**Fix:**
-1. Ensure only one instance of the server is running
-2. Call `store.close()` before process exit (handled automatically by the server)
-3. On Windows, SQLite file locks can persist — restart your terminal if needed
+If you see "Watch directory does not exist" warnings, ensure the paths in `watch_dirs` exist. Non-existent directories are skipped gracefully.
 
-### No graph data from `get_file_graph`
+## Testing
 
-**Symptom:** Returns `{"error": "No graph data available. Run track_files first."}`
+```bash
+# Run all tests
+python -m pytest tests/ -v
 
-**Fix:** Run `track_files` with a valid directory path first. The graph is built from scratch on each `track_files` call.
+# Run specific test file
+python -m pytest tests/test_auto_save.py -v
 
-### `tree-sitter` parser fails to initialize
+# Run with coverage
+python -m pytest tests/ --cov=context_memory_mcp
+```
 
-**Symptom:** Warning logged: `Failed to initialize tree-sitter parser`
+**Test Count:** 224 tests (191 existing + 33 Phase 5)
 
-**Fix:**
-1. Ensure `tree-sitter-language-pack` is installed: `pip install tree-sitter-language-pack`
-2. The parser gracefully falls back to empty results — no crash
-3. On some systems, `tree-sitter` requires a C compiler for native extensions
-
-### Import matching returns fewer edges than expected
-
-**Symptom:** `get_file_graph` shows fewer `IMPORTS_FROM` edges than expected.
-
-**Explanation:** Import matching only creates edges when the imported module name matches a **known file** in the scanned directory. External packages (e.g., `import os`, `import numpy`) are not tracked as edges because they're not in the project's file set.
-
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
 memory/
 ├── src/
 │   └── context_memory_mcp/
-│       ├── __init__.py          # Package version
-│       ├── __main__.py           # python -m entry point
-│       ├── cli.py                # CLI interface (argparse)
-│       ├── mcp_server.py         # FastMCP server + register_all()
-│       ├── chat_store.py         # ChromaDB storage + session management
-│       ├── context.py            # Token-efficient context windows
+│       ├── __init__.py           # Package version + config exports
+│       ├── cli.py                # CLI entry point
+│       ├── mcp_server.py         # FastMCP server + auto wiring
+│       ├── chat_store.py         # ChromaDB chat history storage
+│       ├── context.py            # Token-efficient context retrieval
 │       ├── file_graph.py         # NetworkX file relationship graph
-│       └── parser.py             # tree-sitter AST parser + edge extraction
-├── tests/
-│   ├── test_chat_store.py        # ChatStore CRUD + pruning + index tests
-│   ├── test_context.py           # Context compression + formatting tests
-│   ├── test_file_graph.py        # FileGraph build + query + persistence tests
-│   ├── test_parser.py            # ASTParser + edge extraction tests
-│   └── test_integration.py       # End-to-end integration tests (all tools)
-├── data/                         # Auto-created: chromadb, session index, graph
+│       ├── parser.py             # AST/tree-sitter symbol parser
+│       ├── config.py             # AutoConfig dataclass (Phase 5)
+│       ├── auto_save.py          # Auto-save middleware (Phase 5)
+│       ├── auto_retrieve.py      # Context injector (Phase 5)
+│       └── file_watcher.py       # Watchdog file watcher (Phase 5)
+├── tests/                        # 224 pytest tests
+├── data/                         # Runtime data
+│   ├── chromadb/                 # ChromaDB vector storage
+│   ├── config.json               # Auto configuration (Phase 5)
+│   ├── session_index.json        # Session index for O(1) listing
+│   └── file_graph.json           # File graph persistence
 ├── scripts/                      # Utility scripts
-├── pyproject.toml                # Package metadata + dependencies
-└── README.md                     # This file
+└── pyproject.toml                # Project metadata
 ```
 
-### Running Tests
+## License
 
-```bash
-# Run all tests
-py -m pytest tests/ -v
-
-# Run specific test file
-py -m pytest tests/test_integration.py -v
-
-# Run with coverage
-py -m pytest tests/ --cov=context_memory_mcp --cov-report=term-missing
-
-# Run fast (skip slow tests)
-py -m pytest tests/ -v -k "not performance"
-```
-
-**Current test count:** 191 tests passing.
-
-### Code Style
-
-- Type hints throughout (Python 3.11+ syntax)
-- Docstrings for all public functions and classes
-- `pytest` for testing, `tmp_path` fixture for isolation
-- No `numpy`, no cloud APIs — local-first design
-
-### Contributing
-
-This is a personal weekend project. However, if you find it useful:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all 191+ tests pass
-5. Submit a pull request
-
-### License
-
-Personal use. No formal license specified yet.
-
----
-
-**Built with:** FastMCP, ChromaDB, SentenceTransformers, NetworkX, tree-sitter
-
-**Inspired by:** code-review-graph architecture, spec-driven development (GSD)
+Personal project — not for commercial use.
