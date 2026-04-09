@@ -7,6 +7,7 @@ between files in a codebase for context-aware retrieval.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -355,14 +356,38 @@ class FileGraph:
     def save(self, path: str | None = None) -> None:
         """Persist the graph to disk as JSON.
 
+        Serializes the NetworkX graph using node_link_data format
+        along with the SHA-256 hash index and metadata.
+
         Args:
             path: Output file path. Defaults to ./data/file_graph.json.
         """
-        ...
+        import networkx as nx
+
+        if path is None:
+            path = os.path.join(self.root_path, "data", "file_graph.json")
+
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        # Serialize graph using node_link_data (NO attrs param in NetworkX 3.x)
+        data = nx.node_link_data(self.graph)
+        # Add hash index
+        data["_hash_index"] = self._hash_index
+        data["_metadata"] = {
+            "root_path": self.root_path,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
 
     @classmethod
     def load(cls, path: str) -> FileGraph:
         """Load a graph from a JSON file.
+
+        Reconstructs the NetworkX DiGraph from node_link_data format
+        and restores the SHA-256 hash index.
 
         Args:
             path: Path to the JSON file.
@@ -370,7 +395,19 @@ class FileGraph:
         Returns:
             A FileGraph instance with the loaded data.
         """
-        ...
+        import networkx as nx
+
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Reconstruct graph
+        graph_data = {k: v for k, v in data.items() if k not in ("_hash_index", "_metadata")}
+        G = nx.node_link_graph(graph_data)
+
+        fg = cls(root_path=data.get("_metadata", {}).get("root_path", "."))
+        fg.graph = G
+        fg._hash_index = data.get("_hash_index", {})
+        return fg
 
     def has_changed(self, file_path: str) -> bool:
         """Check if a file has changed since last indexed.

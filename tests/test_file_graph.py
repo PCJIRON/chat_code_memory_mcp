@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import time
 from datetime import datetime
@@ -494,3 +495,142 @@ class TestFileGraphChangeDetection:
         assert result["total_files"] == 0
         assert result["added"] == 0
         assert result["removed"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Graph persistence tests (T08)
+# ---------------------------------------------------------------------------
+
+
+class TestFileGraphPersistence:
+    """Tests for save/load round-trip persistence."""
+
+    def test_save_writes_valid_json(self, tmp_path) -> None:
+        """save() writes valid JSON to disk."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        save_path = str(tmp_path / "data" / "file_graph.json")
+        fg.save(save_path)
+
+        assert os.path.exists(save_path)
+        with open(save_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        assert "nodes" in data
+        assert "edges" in data  # NetworkX 3.x uses "edges" not "links"
+        assert "_hash_index" in data
+        assert "_metadata" in data
+
+    def test_load_reconstructs_graph(self, tmp_path) -> None:
+        """load() reconstructs graph with all node/edge attributes."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        original_nodes = fg.graph.number_of_nodes()
+        original_edges = fg.graph.number_of_edges()
+
+        save_path = str(tmp_path / "data" / "file_graph.json")
+        fg.save(save_path)
+
+        loaded = FileGraph.load(save_path)
+        assert loaded.graph.number_of_nodes() == original_nodes
+        assert loaded.graph.number_of_edges() == original_edges
+
+    def test_round_trip_preserves_node_edge_counts(self, tmp_path) -> None:
+        """Round-trip: build -> save -> load -> verify counts match."""
+        code = '''
+import os
+
+class MyClass:
+    def method(self):
+        pass
+
+def helper():
+    pass
+'''
+        (tmp_path / "sample.py").write_text(code)
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        original_nodes = fg.graph.number_of_nodes()
+        original_edges = fg.graph.number_of_edges()
+        original_hash_index = dict(fg._hash_index)
+
+        save_path = str(tmp_path / "data" / "file_graph.json")
+        fg.save(save_path)
+
+        loaded = FileGraph.load(save_path)
+        assert loaded.graph.number_of_nodes() == original_nodes
+        assert loaded.graph.number_of_edges() == original_edges
+        assert loaded._hash_index == original_hash_index
+
+    def test_save_creates_data_directory(self, tmp_path) -> None:
+        """save() creates ./data/ directory automatically if missing."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        save_path = str(tmp_path / "data" / "file_graph.json")
+        assert not os.path.exists(os.path.dirname(save_path))
+        fg.save(save_path)
+        assert os.path.exists(save_path)
+
+    def test_save_load_empty_edges(self, tmp_path) -> None:
+        """Edge case: graph with 0 edges saves/loads correctly."""
+        fg = FileGraph()
+        # Don't build graph — graph is empty
+        save_path = str(tmp_path / "data" / "file_graph.json")
+        fg.save(save_path)
+
+        loaded = FileGraph.load(save_path)
+        assert loaded.graph.number_of_nodes() == 0
+        assert loaded.graph.number_of_edges() == 0
+
+    def test_round_trip_preserves_line_number_types(self, tmp_path) -> None:
+        """Edge case: line number attributes survive round-trip as integers."""
+        code = '''
+def my_function():
+    pass
+'''
+        (tmp_path / "sample.py").write_text(code)
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        # Find a symbol node with line_start/line_end
+        symbol_nodes = [
+            n for n in fg.graph.nodes()
+            if fg.graph.nodes[n].get("kind") in ("function", "class", "method")
+        ]
+        assert len(symbol_nodes) > 0
+
+        save_path = str(tmp_path / "data" / "file_graph.json")
+        fg.save(save_path)
+
+        loaded = FileGraph.load(save_path)
+        for node_id in symbol_nodes:
+            loaded_node = loaded.graph.nodes[node_id]
+            if "line_start" in loaded_node:
+                assert isinstance(loaded_node["line_start"], int), \
+                    f"line_start should be int, got {type(loaded_node['line_start'])}"
+            if "line_end" in loaded_node:
+                assert isinstance(loaded_node["line_end"], int), \
+                    f"line_end should be int, got {type(loaded_node['line_end'])}"
+
+    def test_load_metadata_preserved(self, tmp_path) -> None:
+        """load() preserves metadata (root_path, saved_at)."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1")
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        save_path = str(tmp_path / "data" / "file_graph.json")
+        fg.save(save_path)
+
+        loaded = FileGraph.load(save_path)
+        assert loaded.root_path == os.path.abspath(str(tmp_path))
+        assert "_metadata" in open(save_path, "r", encoding="utf-8").read()
