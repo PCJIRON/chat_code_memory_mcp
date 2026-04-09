@@ -7,8 +7,10 @@
 
 ## Phase 2 Results
 - **Plans:** 2-01-PLAN.md (10 tasks → 7 commits due to combining)
-- **Tests:** 17/17 PASSED in 28s
+- **Tests:** 21/21 PASSED in 11s (originally 17, +4 from DEBUG-1 fixes)
 - **UAT:** 2-UAT.md — PASS (14/14 requirements verified)
+- **Review:** 2-REVIEW.md — PASS_WITH_NOTES (all 4 MINOR issues fixed via DEBUG-1)
+- **Shipped:** `cc32267` — Phase 2 committed on `master`. No PR created (no remote, no gh CLI, personal local project).
 - **Summary:** 2-01-SUMMARY.md
 - **MVP:** ✅ COMPLETE — ping, store_chat, query_chat all working
 
