@@ -124,3 +124,159 @@ class ChatStore:
     def close(self) -> None:
         """Close the ChromaDB client, releasing SQLite file locks (critical on Windows)."""
         self._client.close()
+
+    def store_messages(
+        self,
+        messages: list[dict[str, str]],
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Batch store chat messages with metadata.
+
+        Args:
+            messages: List of message dicts with "role" and "content" keys.
+                      Optionally "timestamp" key (ISO 8601).
+            session_id: Session UUID. Auto-generated if not provided.
+
+        Returns:
+            Dict with "stored" count and "session_id".
+        """
+        if session_id is None:
+            session_id = str(uuid.uuid4())
+
+        now = datetime.now(timezone.utc).isoformat()
+        ids = [str(uuid.uuid4()) for _ in messages]
+        documents = [msg["content"] for msg in messages]
+        metadatas = [
+            {
+                "session_id": session_id,
+                "role": msg.get("role", "user"),
+                "timestamp": msg.get("timestamp", now),
+            }
+            for msg in messages
+        ]
+
+        self._collection.add(
+            ids=ids,
+            documents=documents,
+            metadatas=metadatas,
+        )
+
+        return {"stored": len(messages), "session_id": session_id}
+
+    def _build_where(
+        self,
+        session_id: str | None = None,
+        role: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Build ChromaDB where clause from optional filters.
+
+        Args:
+            session_id: Optional session ID filter.
+            role: Optional role filter.
+
+        Returns:
+            None if no filters, single dict if one filter,
+            or {"$and": [...]} if both.
+        """
+        conditions = []
+        if session_id:
+            conditions.append({"session_id": session_id})
+        if role:
+            conditions.append({"role": role})
+        if len(conditions) == 0:
+            return None
+        if len(conditions) == 1:
+            return conditions[0]
+        return {"$and": conditions}
+
+    def query_messages(
+        self,
+        query: str,
+        top_k: int = 5,
+        session_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        role: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query chat history by semantic similarity with optional filters.
+
+        Args:
+            query: Natural language search query.
+            top_k: Number of results to return.
+            session_id: Optional filter to specific session.
+            date_from: ISO 8601 start date (e.g. "2024-01-01T00:00:00").
+            date_to: ISO 8601 end date.
+            role: Optional filter by role ("user", "assistant", "system").
+
+        Returns:
+            List of result dicts with content, role, timestamp, session_id,
+            distance, and similarity keys.
+        """
+        where = self._build_where(session_id=session_id, role=role)
+
+        # Over-fetch to account for Python-side date filtering
+        fetch_k = max(top_k * 3, 50)
+
+        result = self._collection.query(
+            query_texts=[query],
+            n_results=fetch_k,
+            where=where if where else None,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        # Results are double-nested: result["documents"] is List[List[str]]
+        docs = result["documents"][0]
+        metas = result["metadatas"][0]
+        distances = result["distances"][0]
+
+        filtered = []
+        for i in range(len(docs)):
+            ts = metas[i]["timestamp"]
+
+            # Python-side date filtering via ISO 8601 string comparison
+            if date_from and ts < date_from:
+                continue
+            if date_to and ts > date_to:
+                continue
+
+            dist = distances[i]
+            filtered.append({
+                "content": docs[i],
+                "role": metas[i]["role"],
+                "timestamp": ts,
+                "session_id": metas[i]["session_id"],
+                "distance": round(dist, 4),
+                "similarity": round(1 - dist, 4),
+            })
+
+        return filtered[:top_k]
+
+    def list_sessions(self) -> list[str]:
+        """List all available conversation session IDs.
+
+        Returns:
+            Sorted list of unique session ID strings.
+        """
+        result = self._collection.get(include=["metadatas"])
+        session_ids = set()
+        for meta in result["metadatas"]:
+            session_ids.add(meta["session_id"])
+        return sorted(session_ids)
+
+    def delete_session(self, session_id: str) -> int:
+        """Delete all messages from a specific session.
+
+        Args:
+            session_id: The session to delete.
+
+        Returns:
+            Number of messages deleted.
+        """
+        result = self._collection.get(
+            where={"session_id": session_id},
+        )
+        ids_to_delete = result["ids"]
+        if not ids_to_delete:
+            return 0
+        self._collection.delete(ids=ids_to_delete)
+        return len(ids_to_delete)
