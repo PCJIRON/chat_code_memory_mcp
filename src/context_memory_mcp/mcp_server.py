@@ -53,8 +53,10 @@ def register_all() -> None:
     from context_memory_mcp.file_graph import register as register_graph
 
     register_graph(mcp)
-    # Phase 4: from context_memory_mcp.context import register as register_context
-    # register_context(mcp)
+    # Phase 4
+    from context_memory_mcp.context import register as register_context
+
+    register_context(mcp)
 
 
 def run_server() -> None:
