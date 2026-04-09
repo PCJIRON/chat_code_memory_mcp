@@ -9,6 +9,7 @@ dependencies = [
     "sentence-transformers>=2.2.0",
     "tree-sitter-language-pack>=0.1.0",
     "networkx>=3.0",
+    "watchdog>=5.0.0",
 ]
 
 [project.scripts]
