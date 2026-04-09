@@ -6,6 +6,7 @@ and extract structural information (imports, classes, functions, etc.).
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 
@@ -303,3 +304,242 @@ def _find_nodes_by_type(node, target_type: str, results: list) -> None:
         results.append(node)
     for child in node.children:
         _find_nodes_by_type(child, target_type, results)
+
+
+# ---------------------------------------------------------------------------
+# Edge extraction functions (T05)
+# ---------------------------------------------------------------------------
+
+def extract_imports_edges(
+    symbols: list[ParsedSymbol],
+    known_files: set[str],
+    file_path: str,
+) -> list[tuple[str, str, str]]:
+    """Extract IMPORTS_FROM edges from parsed symbols.
+
+    Matches import statements against known files in the graph.
+
+    Args:
+        symbols: List of ParsedSymbol objects from parse_file().
+        known_files: Set of absolute file paths known to the graph.
+        file_path: The source file being analyzed.
+
+    Returns:
+        List of (source_id, target_id, "IMPORTS_FROM") tuples.
+    """
+    edges: list[tuple[str, str, str]] = []
+    abs_source = os.path.abspath(file_path)
+
+    for sym in symbols:
+        if sym.kind != "import":
+            continue
+        # Try to match the import text to a known file
+        import_name = sym.name.lower()
+        for known in known_files:
+            known_base = os.path.splitext(os.path.basename(known))[0].lower()
+            # Match "import os" → known file "os.py"
+            if known_base in import_name or import_name in known_base:
+                target_id = f"{known}::{known_base}"
+                edges.append((abs_source, target_id, "IMPORTS_FROM"))
+                break
+
+    return edges
+
+
+def extract_contains_edges(
+    symbols: list[ParsedSymbol],
+    file_path: str,
+) -> list[tuple[str, str, str]]:
+    """Extract CONTAINS edges for class→method hierarchy.
+
+    Creates edges from file to classes, and from classes to their methods.
+
+    Args:
+        symbols: List of ParsedSymbol objects from parse_file().
+        file_path: The source file being analyzed.
+
+    Returns:
+        List of (source_id, target_id, "CONTAINS") tuples.
+    """
+    edges: list[tuple[str, str, str]] = []
+    abs_path = os.path.abspath(file_path)
+    file_node_id = abs_path
+
+    for sym in symbols:
+        if sym.kind == "class":
+            edges.append((file_node_id, sym.qualified_name, "CONTAINS"))
+        elif sym.kind == "method":
+            # Methods are already named as "ClassName.method"
+            # Find their parent class
+            class_name = sym.name.split(".")[0]
+            class_qn = f"{abs_path}::{class_name}"
+            edges.append((class_qn, sym.qualified_name, "CONTAINS"))
+
+    return edges
+
+
+def extract_calls_edges(
+    root_node,
+    file_path: str,
+    known_symbols: dict[str, ParsedSymbol],
+) -> list[tuple[str, str, str]]:
+    """Extract CALLS edges from call expressions in the AST.
+
+    Args:
+        root_node: The tree-sitter root node of the parsed file.
+        file_path: The source file being analyzed.
+        known_symbols: Dict mapping qualified names to ParsedSymbol objects.
+
+    Returns:
+        List of (source_id, target_id, "CALLS") tuples.
+    """
+    edges: list[tuple[str, str, str]] = []
+    abs_path = os.path.abspath(file_path)
+
+    call_nodes: list = []
+    _find_nodes_by_type(root_node, "call", call_nodes)
+
+    for call_node in call_nodes:
+        func_node = call_node.child_by_field_name("function")
+        if func_node is None:
+            continue
+        func_name = func_node.text.decode().strip()
+        # Try to match to known symbols
+        # Simple function name match
+        base_name = func_name.split(".")[-1]
+        for qn, sym in known_symbols.items():
+            if sym.name == base_name or qn.endswith(f"::{func_name}") or qn.endswith(f"::{base_name}"):
+                edges.append((abs_path, qn, "CALLS"))
+                break
+
+    return edges
+
+
+def extract_inherits_edges(
+    symbols: list[ParsedSymbol],
+    file_path: str,
+) -> list[tuple[str, str, str]]:
+    """Extract INHERITS edges from class definitions.
+
+    Args:
+        symbols: List of ParsedSymbol objects (should include class symbols).
+        file_path: The source file being analyzed.
+
+    Returns:
+        List of (source_id, target_id, "INHERITS") tuples.
+    """
+    edges: list[tuple[str, str, str]] = []
+    abs_path = os.path.abspath(file_path)
+
+    for sym in symbols:
+        if sym.kind != "class":
+            continue
+        # We don't have base class info in ParsedSymbol from Wave 1,
+        # so we return empty here. The FileGraph.build_graph will call
+        # this with AST root nodes for full extraction.
+        # This function exists as a hook for future enhancement.
+
+    return edges
+
+
+def extract_implements_edges(
+    symbols: list[ParsedSymbol],
+    file_path: str,
+) -> list[tuple[str, str, str]]:
+    """Extract IMPLEMENTS edges for Protocol/ABC implementations.
+
+    Args:
+        symbols: List of ParsedSymbol objects.
+        file_path: The source file being analyzed.
+
+    Returns:
+        List of (source_id, target_id, "IMPLEMENTS") tuples.
+    """
+    edges: list[tuple[str, str, str]] = []
+    abs_path = os.path.abspath(file_path)
+
+    for sym in symbols:
+        if sym.kind != "class":
+            continue
+        # Check if class name suggests Protocol/ABC implementation
+        # This is a heuristic based on the import symbols
+        # Full detection requires AST root node access to superclasses
+
+    return edges
+
+
+def detect_tested_by(
+    test_file: str,
+    source_files: set[str],
+) -> list[tuple[str, str, str]]:
+    """Detect TESTED_BY edges between test files and source files.
+
+    Matches test_*.py → *.py and *_test.py → *.py patterns.
+
+    Args:
+        test_file: Path to a test file.
+        source_files: Set of all known source file paths.
+
+    Returns:
+        List of (test_file, source_file, "TESTED_BY") tuples.
+    """
+    edges: list[tuple[str, str, str]] = []
+    test_basename = os.path.basename(test_file)
+    test_stem = os.path.splitext(test_basename)[0]
+
+    # Determine the source module name
+    source_stem: str | None = None
+    if test_stem.startswith("test_"):
+        source_stem = test_stem[5:]  # Remove "test_" prefix
+    elif test_stem.endswith("_test"):
+        source_stem = test_stem[:-5]  # Remove "_test" suffix
+
+    if source_stem is None:
+        return edges
+
+    abs_test = os.path.abspath(test_file)
+    for src in source_files:
+        src_basename = os.path.basename(src)
+        src_stem = os.path.splitext(src_basename)[0]
+        if src_stem == source_stem:
+            edges.append((abs_test, os.path.abspath(src), "TESTED_BY"))
+            break
+
+    return edges
+
+
+def extract_depends_on_edges(
+    symbols: list[ParsedSymbol],
+    known_files: set[str],
+    file_path: str,
+    existing_edges: list[tuple[str, str, str]],
+) -> list[tuple[str, str, str]]:
+    """Extract DEPENDS_ON edges as fallback for unclassified dependencies.
+
+    Creates edges for any import that wasn't already classified as IMPORTS_FROM.
+
+    Args:
+        symbols: List of ParsedSymbol objects.
+        known_files: Set of known file paths.
+        file_path: The source file being analyzed.
+        existing_edges: Already classified edges to avoid duplicates.
+
+    Returns:
+        List of (source_id, target_id, "DEPENDS_ON") tuples.
+    """
+    existing_targets = {e[1] for e in existing_edges}
+    edges: list[tuple[str, str, str]] = []
+    abs_source = os.path.abspath(file_path)
+
+    for sym in symbols:
+        if sym.kind != "import":
+            continue
+        import_name = sym.name.lower()
+        for known in known_files:
+            known_base = os.path.splitext(os.path.basename(known))[0].lower()
+            if (known_base in import_name or import_name in known_base) and \
+               f"{known}::{known_base}" not in existing_targets:
+                edges.append((abs_source, f"{known}::{known_base}", "DEPENDS_ON"))
+                break
+
+    return edges

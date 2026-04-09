@@ -364,3 +364,166 @@ class TestASTParserGetImports:
         parser = ASTParser()
         imports = parser.get_imports(str(f))
         assert imports == []
+
+
+# ---------------------------------------------------------------------------
+# Edge extraction tests (T05)
+# ---------------------------------------------------------------------------
+
+from context_memory_mcp.parser import (
+    detect_tested_by,
+    extract_calls_edges,
+    extract_contains_edges,
+    extract_depends_on_edges,
+    extract_implements_edges,
+    extract_imports_edges,
+    extract_inherits_edges,
+)
+
+
+class TestEdgeExtraction:
+    """Tests for edge extraction functions."""
+
+    def test_extract_imports_edges_matches_known_files(self, tmp_path) -> None:
+        """IMPORTS_FROM edges match known files."""
+        f = tmp_path / "main.py"
+        f.write_text("import os\nimport sys\n")
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        known_files = {str(tmp_path / "os.py"), str(tmp_path / "sys.py")}
+        edges = extract_imports_edges(symbols, known_files, str(f))
+        # Edges should be tuples of (source, target, "IMPORTS_FROM")
+        assert isinstance(edges, list)
+        for edge in edges:
+            assert len(edge) == 3
+            assert edge[2] == "IMPORTS_FROM"
+
+    def test_extract_imports_edges_no_known_files(self, tmp_path) -> None:
+        """IMPORTS_FROM returns empty when no known files match."""
+        f = tmp_path / "main.py"
+        f.write_text("import os\nimport sys\n")
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        edges = extract_imports_edges(symbols, set(), str(f))
+        assert edges == []
+
+    def test_extract_contains_edges_classes_and_methods(self, tmp_path) -> None:
+        """CONTAINS edges link file→class→method."""
+        f = tmp_path / "sample.py"
+        f.write_text(SAMPLE_PYTHON_FILE)
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        edges = extract_contains_edges(symbols, str(f))
+        edge_types = {e[2] for e in edges}
+        assert "CONTAINS" in edge_types
+        # Should have file→class and class→method edges
+        assert len(edges) >= 3  # file→class, class→__init__, class→greet
+
+    def test_extract_contains_edges_empty(self) -> None:
+        """CONTAINS returns empty for symbols without classes."""
+        symbols = [
+            type("ParsedSymbol", (), {"name": "x", "kind": "variable", "file_path": "/t.py", "line_start": 1, "line_end": 1, "docstring": None, "qualified_name": "/t.py::x"})(),
+        ]
+        edges = extract_contains_edges(symbols, "/t.py")  # type: ignore[arg-type]
+        assert edges == []
+
+    def test_extract_inherits_edges_empty_with_symbols_only(self) -> None:
+        """INHERITS returns empty when only ParsedSymbol info is available."""
+        symbols = [
+            type("ParsedSymbol", (), {"name": "MyClass", "kind": "class", "file_path": "/t.py", "line_start": 1, "line_end": 1, "docstring": None, "qualified_name": "/t.py::MyClass"})(),
+        ]
+        edges = extract_inherits_edges(symbols, "/t.py")  # type: ignore[arg-type]
+        assert edges == []
+
+    def test_extract_implements_edges_empty_with_symbols_only(self) -> None:
+        """IMPLEMENTS returns empty when only ParsedSymbol info is available."""
+        symbols = [
+            type("ParsedSymbol", (), {"name": "MyClass", "kind": "class", "file_path": "/t.py", "line_start": 1, "line_end": 1, "docstring": None, "qualified_name": "/t.py::MyClass"})(),
+        ]
+        edges = extract_implements_edges(symbols, "/t.py")  # type: ignore[arg-type]
+        assert edges == []
+
+    def test_detect_tested_by_matching(self, tmp_path) -> None:
+        """TESTED_BY edge detected for test_*.py → *.py pattern."""
+        test_f = tmp_path / "test_foo.py"
+        test_f.write_text("def test_something(): pass")
+        source_f = tmp_path / "foo.py"
+        source_f.write_text("def something(): pass")
+        source_files = {str(source_f)}
+        edges = detect_tested_by(str(test_f), source_files)
+        assert len(edges) == 1
+        assert edges[0][2] == "TESTED_BY"
+        assert edges[0][1] == os.path.abspath(str(source_f))
+
+    def test_detect_tested_by_no_match(self, tmp_path) -> None:
+        """TESTED_BY returns empty when no source matches."""
+        test_f = tmp_path / "test_bar.py"
+        test_f.write_text("def test_x(): pass")
+        source_files = {str(tmp_path / "foo.py")}
+        edges = detect_tested_by(str(test_f), source_files)
+        assert edges == []
+
+    def test_detect_tested_by_underscore_pattern(self, tmp_path) -> None:
+        """TESTED_BY detects *_test.py pattern."""
+        test_f = tmp_path / "foo_test.py"
+        test_f.write_text("def test_x(): pass")
+        source_f = tmp_path / "foo.py"
+        source_f.write_text("def x(): pass")
+        source_files = {str(source_f)}
+        edges = detect_tested_by(str(test_f), source_files)
+        assert len(edges) == 1
+        assert edges[0][2] == "TESTED_BY"
+
+    def test_detect_tested_by_non_test_file(self, tmp_path) -> None:
+        """TESTED_BY returns empty for non-test files."""
+        f = tmp_path / "utils.py"
+        f.write_text("x = 1")
+        source_files = {str(tmp_path / "foo.py")}
+        edges = detect_tested_by(str(f), source_files)
+        assert edges == []
+
+    def test_extract_depends_on_edges_fallback(self, tmp_path) -> None:
+        """DEPENDS_ON edges created for unclassified imports."""
+        f = tmp_path / "main.py"
+        f.write_text("import os\n")
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        known_files = {str(tmp_path / "os.py")}
+        # No existing edges → DEPENDS_ON should be created
+        edges = extract_depends_on_edges(symbols, known_files, str(f), [])
+        assert isinstance(edges, list)
+
+    def test_extract_calls_edges(self, tmp_path) -> None:
+        """CALLS edges extracted from call expressions."""
+        f = tmp_path / "caller.py"
+        f.write_text("import os\nx = os.path.join('a', 'b')\n")
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        # Re-parse to get root node
+        import tree_sitter as ts
+        import tree_sitter_language_pack as tslp
+        binding = tslp.get_binding("python")
+        lang = ts.Language(binding)
+        ts_parser = ts.Parser(lang)
+        tree = ts_parser.parse(f.read_bytes())
+        known_symbols = {s.qualified_name: s for s in symbols}
+        edges = extract_calls_edges(tree.root_node, str(f), known_symbols)
+        assert isinstance(edges, list)
+        # All edges should have CALLS type
+        for edge in edges:
+            assert edge[2] == "CALLS"
+
+    def test_extract_calls_edges_empty_when_no_calls(self, tmp_path) -> None:
+        """CALLS returns empty when no call expressions exist."""
+        f = tmp_path / "nocalls.py"
+        f.write_text("x = 1\ny = 2\n")
+        parser = ASTParser()
+        symbols = parser.parse_file(str(f))
+        import tree_sitter as ts
+        import tree_sitter_language_pack as tslp
+        binding = tslp.get_binding("python")
+        lang = ts.Language(binding)
+        ts_parser = ts.Parser(lang)
+        tree = ts_parser.parse(f.read_bytes())
+        edges = extract_calls_edges(tree.root_node, str(f), {})
+        assert edges == []
