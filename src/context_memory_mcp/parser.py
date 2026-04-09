@@ -85,55 +85,81 @@ class ASTParser:
         language_pack: The tree-sitter language pack in use.
     """
 
+    # Mapping from file extensions to language identifiers
+    _EXTENSION_MAP = {
+        ".py": "python",
+        ".pyi": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".tsx": "tsx",
+        ".go": "go",
+        ".rs": "rust",
+        ".java": "java",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".h": "c",
+        ".hpp": "cpp",
+    }
+
     def __init__(self, language: str = "auto") -> None:
         """Initialize the ASTParser.
 
         Args:
             language: Default language hint. "auto" detects from file extension.
         """
-        ...
+        self.language_hint = language
+        self._parser = None
+        self._language = None
+        self._init_parser()
 
-    def parse_file(self, file_path: str) -> list[ParsedSymbol]:
-        """Parse a source file and extract all symbols.
+    def _init_parser(self) -> None:
+        """Initialize tree-sitter parser using get_binding (works without network).
 
-        Args:
-            file_path: Path to the source file.
-
-        Returns:
-            List of ParsedSymbol objects found in the file.
+        Uses the confirmed working pattern:
+            tslp.get_binding("python") -> ts.Language(binding) -> ts.Parser(lang)
         """
-        ...
+        try:
+            import tree_sitter as ts
+            import tree_sitter_language_pack as tslp
+        except ImportError as e:
+            import logging
+            logging.warning(f"Failed to import tree-sitter packages: {e}")
+            self._parser = None
+            return
 
-    def parse_content(self, content: str, language: str) -> list[ParsedSymbol]:
-        """Parse source code content directly.
-
-        Args:
-            content: Source code text.
-            language: Programming language identifier.
-
-        Returns:
-            List of ParsedSymbol objects found in the content.
-        """
-        ...
-
-    def get_imports(self, file_path: str) -> list[str]:
-        """Extract import statements from a source file.
-
-        Args:
-            file_path: Path to the source file.
-
-        Returns:
-            List of imported module/file paths.
-        """
-        ...
+        try:
+            binding = tslp.get_binding("python")
+            lang = ts.Language(binding)
+            self._parser = ts.Parser(lang)
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to initialize tree-sitter parser: {e}")
+            self._parser = None
 
     def detect_language(self, file_path: str) -> str:
         """Detect the programming language of a file.
 
+        Uses file extension lookup as primary method since
+        detect_language_from_path requires content-based detection
+        which may be unreliable. Falls back to extension mapping.
+
         Args:
             file_path: Path to the source file.
 
         Returns:
-            Language identifier string (e.g., "python", "typescript").
+            Language identifier string (e.g., "python", "typescript"),
+            or "unsupported" if the language cannot be determined.
         """
-        ...
+        try:
+            import tree_sitter_language_pack as tslp
+            # Try content-based detection first
+            detected = tslp.detect_language_from_path(file_path)
+            if detected:
+                return detected
+        except Exception:
+            pass
+
+        # Fallback to extension-based detection
+        import os
+        _, ext = os.path.splitext(file_path)
+        return self._EXTENSION_MAP.get(ext.lower(), "unsupported")
