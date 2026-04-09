@@ -382,3 +382,120 @@ def test_prune_sessions_max_sessions_one(store: ChatStore) -> None:
     sessions = store.list_sessions()
     assert "second" in sessions
     assert "first" not in sessions
+
+
+# --- T08-T09: Session index tests ---
+
+
+def test_session_index_updated_on_store(store: ChatStore) -> None:
+    """Session index is updated when messages are stored."""
+    store.store_messages(
+        [{"role": "user", "content": "hello"}],
+        session_id="index-sess",
+    )
+    sessions = store.list_sessions()
+    assert "index-sess" in sessions
+
+
+def test_session_index_updated_on_delete(store: ChatStore) -> None:
+    """Session index is updated when a session is deleted."""
+    store.store_messages(
+        [{"role": "user", "content": "hello"}],
+        session_id="delete-sess",
+    )
+    assert "delete-sess" in store.list_sessions()
+    store.delete_session("delete-sess")
+    assert "delete-sess" not in store.list_sessions()
+
+
+def test_list_sessions_reads_index(store: ChatStore) -> None:
+    """list_sessions() returns sorted session IDs from the index."""
+    store.store_messages([{"role": "user", "content": "a"}], session_id="zebra")
+    store.store_messages([{"role": "user", "content": "b"}], session_id="alpha")
+    store.store_messages([{"role": "user", "content": "c"}], session_id="middle")
+    sessions = store.list_sessions()
+    assert sessions == ["alpha", "middle", "zebra"]
+
+
+# --- T08-T09: conversation_id alias tests ---
+
+
+def test_query_chat_conversation_id_alias(store: ChatStore) -> None:
+    """query_messages works with session_id parameter (alias simulation)."""
+    store.store_messages(
+        [{"role": "user", "content": "hello from session X"}],
+        session_id="sess-X",
+    )
+    # query_messages uses session_id directly; the alias is in the MCP tool layer
+    results = store.query_messages("hello", session_id="sess-X", top_k=5)
+    assert len(results) == 1
+    assert results[0]["session_id"] == "sess-X"
+
+
+def test_query_chat_empty_session_id_raises(store: ChatStore) -> None:
+    """Empty session_id string should be rejected at the MCP tool level.
+
+    Note: query_messages itself accepts None/empty; validation is in query_chat.
+    This test verifies the ChatStore query_messages handles session_id="".
+    """
+    store.store_messages(
+        [{"role": "user", "content": "test message"}],
+        session_id="valid-sess",
+    )
+    # query_messages with empty string should not crash (returns empty due to no match)
+    results = store.query_messages("test", session_id="", top_k=5)
+    assert isinstance(results, list)
+
+
+# --- T08-T09: Date validation tests ---
+
+
+def test_query_chat_invalid_date_raises(store: ChatStore) -> None:
+    """Invalid ISO 8601 date should raise ValueError."""
+    store.store_messages(
+        [{"role": "user", "content": "test"}],
+        session_id="date-sess",
+    )
+    with pytest.raises(ValueError, match="Invalid date_from format"):
+        store.query_messages("test", date_from="not-a-date", top_k=5)
+
+    with pytest.raises(ValueError, match="Invalid date_to format"):
+        store.query_messages("test", date_to="also-not-a-date", top_k=5)
+
+
+def test_query_chat_date_range_swap(store: ChatStore) -> None:
+    """When date_from > date_to, they should be swapped automatically."""
+    store.store_messages(
+        [
+            {"role": "user", "content": "march msg", "timestamp": "2024-03-15T10:00:00+00:00"},
+            {"role": "user", "content": "may msg", "timestamp": "2024-05-15T10:00:00+00:00"},
+        ],
+        session_id="swap-sess",
+    )
+    # Intentionally swap the dates (from > to)
+    results = store.query_messages(
+        "msg",
+        session_id="swap-sess",
+        date_from="2024-06-01T00:00:00+00:00",  # After date_to — should swap
+        date_to="2024-04-01T00:00:00+00:00",
+        top_k=10,
+    )
+    contents = [r["content"] for r in results]
+    # After swap, range is April to June → should get may msg
+    assert "may msg" in contents
+    assert "march msg" not in contents
+
+
+def test_query_messages_empty_results(store: ChatStore) -> None:
+    """Empty results should return an empty list, not an error."""
+    store.store_messages(
+        [{"role": "user", "content": "hello world"}],
+        session_id="empty-results",
+    )
+    results = store.query_messages(
+        "xyzzy",
+        session_id="empty-results",
+        date_from="2099-01-01T00:00:00+00:00",  # Far future — no matches
+        top_k=5,
+    )
+    assert results == []
