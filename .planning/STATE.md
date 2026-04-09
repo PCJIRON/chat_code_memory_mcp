@@ -1,17 +1,19 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PHASE_4_CONTEXT_CAPTURED — Phase 4 decisions documented
-- **Last Action**: Phase 4 CONTEXT.md created — 13 tasks (9 roadmap + 4 MAJOR fixes)
-- **Next Step**: `/gsd:plan-phase 4` (create atomic task plan)
+- **Status**: PHASE_4_PLANNED — research, plan, and validation complete
+- **Last Action**: Phase 4 plan committed (13 tasks + checkpoint, 4 waves)
+- **Next Step**: `/gsd:execute-phase 4` (implement the plan)
 
-## Phase 4 Decisions Summary
-- **Token compression:** Hybrid template + smart truncation (~100 token budget)
-- **Detail levels:** minimal (~100 tokens), summary (~300 tokens), full (raw)
-- **MAJOR fixes:** All 4 deferred items included in Phase 4 scope
-- **query_chat:** Re-implement with validation (already has params from Phase 2)
-- **Testing:** Focus on new Phase 4 features + integration tests
-- **README:** Comprehensive — architecture, tools, examples, troubleshooting
+## Phase 4 Plan Summary
+- **Plan:** 4-01-PLAN.md (13 tasks + checkpoint, 4 waves, validation PASS_WITH_NOTES)
+- **Validation:** 4-01-VALIDATION.md — PASS_WITH_NOTES (0 CRITICAL, 0 MAJOR, 4 MINOR)
+- **Scope:** 9 roadmap tasks + 4 MAJOR deferred fixes
+- **Waves:**
+  - Wave 1: T1–T4 (Context system + session pruning)
+  - Wave 2: T5–T7 (Session index + import matching + double-parse fix)
+  - Wave 3: T8–T11 (Query validation + unit tests)
+  - Wave 4: T12–T13 (Integration tests + README + checkpoint)
 
 ## Phase 3 Peer Review
 - **Verdict:** PASS_WITH_NOTES (3-REVIEW.md)
