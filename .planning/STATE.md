@@ -1,9 +1,9 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PHASE_3_WAVE2_COMPLETE — Graph Foundation implemented and tested
-- **Last Action**: Phase 3 Wave 2 (T04–T07) executed — 4 commits, 54/54 new tests PASSED, 102/102 total
-- **Next Step**: `/gsd:execute-phase 3` Wave 3 (T08–T10: Persistence & MCP Integration)
+- **Status**: PHASE_3_EXECUTION_COMPLETE — All 10 tasks across 3 waves implemented and tested
+- **Last Action**: Phase 3 Wave 3 (T08–T10) executed — 3 commits, 18/18 new tests PASSED, 120/120 total
+- **Next Step**: `/gsd:execute-phase 4` (Integration & Polish)
 
 ## Phase 3 Plan Summary
 - **Research:** 3-RESEARCH.md — `get_binding()` pattern confirmed working, Query API avoided, NetworkX 3.x compatibility verified
@@ -12,7 +12,7 @@
 - **Waves:**
   - Wave 1: T01–T03 (Parser Foundation) ✅ COMPLETE
   - Wave 2: T04–T07 (Graph Foundation) ✅ COMPLETE
-  - Wave 3: T08–T10 (Persistence & MCP Integration) — NEXT
+  - Wave 3: T08–T10 (Persistence & MCP Integration) ✅ COMPLETE
 - **Wave 1 Commits:**
   - T01: `5a8e1c8` — Implement ParsedSymbol data class with qualified_name property
   - T02: `3bdb4e4` — Implement language detection and tree-sitter initialization
@@ -22,7 +22,11 @@
   - T05: `53c7086` — Implement edge extraction logic for all 7 edge types
   - T06: `e5800a0` — Implement FileGraph with NetworkX DiGraph and build_graph
   - T07: `0a437e9` — Implement SHA-256 change detection and incremental update
-- **Wave 2 Summary:** 3-01-WAVE2-SUMMARY.md
+- **Wave 3 Commits:**
+  - T08: `299382d` — Implement graph persistence with JSON save/load
+  - T09: `465d3ce` — Implement graph query methods (dependencies, dependents, impact set)
+  - T10: `6fb6163` — Register track_files and get_file_graph MCP tools
+- **Summaries:** 3-01-WAVE3-SUMMARY.md, 3-01-SUMMARY.md
 
 ## Phase 2 Results
 - **Plans:** 2-01-PLAN.md (10 tasks → 7 commits due to combining)
@@ -66,13 +70,13 @@ MCP server that stores chat history in ChromaDB and tracks file changes using gr
 |-------|--------|-------|-------|
 | 1 — Foundation | ✅ COMPLETE | 1 | 6/6 |
 | 2 — Chat Memory | ✅ COMPLETE | — | 9/9 |
-| 3 — File Graph | Wave 2 complete | — | 7/10 |
+| 3 — File Graph | ✅ COMPLETE | — | 10/10 |
 | 4 — Integration & Polish | Not started | — | 0/9 |
 
 ## Milestones
 - [x] M1: Server starts, ping works (Phase 1)
 - [ ] M2: MVP complete — chat memory works end-to-end (Phase 2)
-- [ ] M3: File graph built and queryable (Phase 3)
+- [x] M3: File graph built and queryable (Phase 3)
 - [ ] M4: Ship — tested, documented, ready (Phase 4)
 
 ## Deviation Log
