@@ -36,11 +36,27 @@ class ParsedSymbol:
             name: Symbol name.
             kind: Symbol type.
             file_path: Source file path.
-            line_start: Starting line number.
-            line_end: Ending line number.
+            line_start: Starting line number (1-based).
+            line_end: Ending line number (1-based).
             docstring: Extracted docstring.
         """
-        ...
+        self.name = name
+        self.kind = kind
+        self.file_path = file_path
+        self.line_start = line_start
+        self.line_end = line_end
+        self.docstring = docstring
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the fully qualified symbol name.
+
+        Returns:
+            String in format "/abs/path/file.py::symbol_name".
+        """
+        import os
+        abs_path = os.path.abspath(self.file_path)
+        return f"{abs_path}::{self.name}"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the symbol to a dictionary.
@@ -48,7 +64,15 @@ class ParsedSymbol:
         Returns:
             Dictionary representation for JSON serialization.
         """
-        ...
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "file_path": self.file_path,
+            "line_start": self.line_start,
+            "line_end": self.line_end,
+            "docstring": self.docstring,
+            "qualified_name": self.qualified_name,
+        }
 
 
 class ASTParser:
