@@ -6,12 +6,15 @@ using ChromaDB vector embeddings for semantic search.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Annotated, Any
 
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 # Module-level singleton — instantiated once at server startup
 _store: ChatStore | None = None
@@ -218,3 +221,76 @@ class ChatStore:
             return 0
         self._collection.delete(ids=ids_to_delete)
         return len(ids_to_delete)
+
+
+def register(mcp: FastMCP) -> None:
+    """Register chat memory tools with the MCP server.
+
+    Registers:
+        store_chat — Batch store chat messages
+        query_chat — Semantic search with optional filters
+    """
+    store = get_store()
+
+    @mcp.tool(
+        name="store_chat",
+        description="Store a batch of chat messages in conversation history",
+    )
+    async def store_chat(
+        messages: Annotated[
+            list[dict[str, str]],
+            Field(description='List of {role: "user"|"assistant"|"system", content: str} objects'),
+        ],
+        session_id: Annotated[
+            str | None,
+            Field(description="Session UUID. Auto-generated if omitted"),
+        ] = None,
+    ) -> str:
+        """Store chat messages with metadata. Returns JSON with stored count and session_id."""
+        result = store.store_messages(messages=messages, session_id=session_id)
+        return json.dumps(result, indent=2)
+
+    @mcp.tool(
+        name="query_chat",
+        description="Search chat history by semantic similarity with optional filters",
+    )
+    async def query_chat(
+        query: Annotated[
+            str,
+            Field(description="Natural language search query"),
+        ],
+        top_k: Annotated[
+            int,
+            Field(description="Number of results to return", ge=1, le=50),
+        ] = 5,
+        session_id: Annotated[
+            str | None,
+            Field(description="Filter to specific session"),
+        ] = None,
+        date_from: Annotated[
+            str | None,
+            Field(description="ISO 8601 start date (e.g. 2024-01-01T00:00:00)"),
+        ] = None,
+        date_to: Annotated[
+            str | None,
+            Field(description="ISO 8601 end date (e.g. 2024-01-31T23:59:59)"),
+        ] = None,
+        role: Annotated[
+            str | None,
+            Field(description='Filter by role: "user", "assistant", "system"'),
+        ] = None,
+    ) -> str:
+        """Query chat history with semantic search and optional filters."""
+        results = store.query_messages(
+            query=query,
+            top_k=top_k,
+            session_id=session_id,
+            date_from=date_from,
+            date_to=date_to,
+            role=role,
+        )
+        return json.dumps({
+            "query": query,
+            "total_found": len(results),
+            "results": results,
+        }, indent=2)
