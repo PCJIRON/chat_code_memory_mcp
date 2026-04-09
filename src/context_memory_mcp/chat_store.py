@@ -7,6 +7,7 @@ using ChromaDB vector embeddings for semantic search.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -234,7 +235,34 @@ class ChatStore:
 
         Returns:
             List of result dicts with content, role, timestamp, distance, similarity.
+
+        Raises:
+            ValueError: If date_from or date_to is not valid ISO 8601 format.
         """
+        # Validate date formats
+        if date_from:
+            try:
+                datetime.fromisoformat(date_from)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid date_from format: {date_from}. Expected ISO 8601."
+                )
+
+        if date_to:
+            try:
+                datetime.fromisoformat(date_to)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid date_to format: {date_to}. Expected ISO 8601."
+                )
+
+        # Handle date_from > date_to — swap with warning
+        if date_from and date_to and date_from > date_to:
+            logging.warning(
+                f"date_from ({date_from}) > date_to ({date_to}) — swapping"
+            )
+            date_from, date_to = date_to, date_from
+
         where = self._build_where(session_id=session_id, role=role)
 
         # Over-fetch to have enough candidates for Python date filtering
@@ -397,6 +425,10 @@ def register(mcp: FastMCP) -> None:
             str | None,
             Field(description="Filter to specific session"),
         ] = None,
+        conversation_id: Annotated[
+            str | None,
+            Field(description="Alias for session_id"),
+        ] = None,
         date_from: Annotated[
             str | None,
             Field(description="ISO 8601 start date (e.g. 2024-01-01T00:00:00)"),
@@ -411,6 +443,21 @@ def register(mcp: FastMCP) -> None:
         ] = None,
     ) -> str:
         """Query chat history with semantic search and optional filters."""
+        # Handle conversation_id alias
+        if conversation_id and not session_id:
+            session_id = conversation_id
+        elif conversation_id and session_id:
+            logging.warning(
+                "Both session_id and conversation_id provided — using conversation_id"
+            )
+            session_id = conversation_id
+
+        # Validate: reject empty strings
+        if session_id == "":
+            raise ValueError("session_id cannot be empty")
+        if conversation_id == "":
+            raise ValueError("conversation_id cannot be empty")
+
         results = store.query_messages(
             query=query,
             top_k=top_k,
