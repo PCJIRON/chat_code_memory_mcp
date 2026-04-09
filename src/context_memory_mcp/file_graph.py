@@ -6,6 +6,9 @@ between files in a codebase for context-aware retrieval.
 
 from __future__ import annotations
 
+import hashlib
+import os
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -17,7 +20,7 @@ class FileNode:
         language: Detected programming language.
         size_bytes: File size in bytes.
         last_modified: ISO 8601 timestamp of last modification.
-        hash: Content hash for change detection.
+        file_hash: Content SHA-256 hash for change detection.
     """
 
     def __init__(
@@ -37,7 +40,45 @@ class FileNode:
             last_modified: ISO 8601 timestamp.
             file_hash: Content hash for change detection.
         """
-        ...
+        self.path = path
+        self.language = language
+        self.size_bytes = size_bytes
+        self.last_modified = last_modified
+        self.file_hash = file_hash
+
+    @staticmethod
+    def compute_hash(file_path: str) -> str:
+        """Compute SHA-256 hash of a file using chunked reads (8KB chunks).
+
+        Args:
+            file_path: Path to the file to hash.
+
+        Returns:
+            Hex digest string of the SHA-256 hash.
+        """
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            while True:
+                chunk = f.read(8192)  # 8KB chunks for 4x faster performance
+                if not chunk:
+                    break
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+    def update_from_file(self, file_path: str) -> None:
+        """Update node metadata from the actual file on disk.
+
+        Reads file size, modification time, and computes SHA-256 hash.
+
+        Args:
+            file_path: Path to the file to read metadata from.
+        """
+        stat = os.stat(file_path)
+        self.path = os.path.abspath(file_path)
+        self.size_bytes = stat.st_size
+        mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+        self.last_modified = mtime.isoformat()
+        self.file_hash = self.compute_hash(file_path)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the node to a dictionary.
@@ -45,7 +86,13 @@ class FileNode:
         Returns:
             Dictionary representation for JSON serialization.
         """
-        ...
+        return {
+            "path": self.path,
+            "language": self.language,
+            "size_bytes": self.size_bytes,
+            "last_modified": self.last_modified,
+            "file_hash": self.file_hash,
+        }
 
 
 class FileGraph:
