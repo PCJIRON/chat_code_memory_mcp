@@ -285,6 +285,58 @@ class FileGraph:
         """
         self.graph.add_edge(source, target, edge_type=dep_type)
 
+    def get_file_nodes(self, file_path: str) -> list[str]:
+        """Return all node IDs belonging to a file.
+
+        Includes the file-level node and all symbol nodes within the file.
+
+        Args:
+            file_path: Path to the file to query.
+
+        Returns:
+            List of node IDs (file path and symbol qualified names).
+        """
+        file_path = os.path.abspath(file_path)
+        return [
+            n for n in self.graph.nodes()
+            if self.graph.nodes[n].get("file_path") == file_path
+        ]
+
+    def get_subgraph(self, file_path: str) -> dict:
+        """Return structured dict for MCP response.
+
+        Args:
+            file_path: Path to the file to query.
+
+        Returns:
+            Dictionary with file, nodes, edges, dependencies, dependents,
+            and impact_summary suitable for JSON serialization.
+        """
+        file_path = os.path.abspath(file_path)
+        nodes = self.get_file_nodes(file_path)
+        node_set = set(nodes)
+        edges = [
+            (s, t, self.graph[s][t])
+            for s, t in self.graph.edges()
+            if s in node_set or t in node_set
+        ]
+        deps = self.get_dependencies(file_path)
+        dependents = self.get_dependents(file_path)
+        return {
+            "file": file_path,
+            "nodes": [self.graph.nodes[n] for n in nodes],
+            "edges": [
+                {"source": s, "target": t, **attr}
+                for s, t, attr in edges
+            ],
+            "dependencies": deps,
+            "dependents": dependents,
+            "impact_summary": {
+                "direct_dependencies": len(deps),
+                "direct_dependents": len(dependents),
+            },
+        }
+
     def get_dependencies(self, file_path: str) -> list[str]:
         """Get all files that the given file depends on.
 

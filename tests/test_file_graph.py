@@ -634,3 +634,99 @@ def my_function():
         loaded = FileGraph.load(save_path)
         assert loaded.root_path == os.path.abspath(str(tmp_path))
         assert "_metadata" in open(save_path, "r", encoding="utf-8").read()
+
+
+# ---------------------------------------------------------------------------
+# Graph query method tests (T09)
+# ---------------------------------------------------------------------------
+
+
+class TestFileGraphQueryMethods:
+    """Tests for get_file_nodes and get_subgraph query methods."""
+
+    def test_get_file_nodes_returns_file_and_symbols(self, tmp_path) -> None:
+        """get_file_nodes returns file-level node and all symbol nodes."""
+        code = '''
+class MyClass:
+    def method(self):
+        pass
+
+def helper():
+    pass
+'''
+        (tmp_path / "sample.py").write_text(code)
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        sample_path = str(tmp_path / "sample.py")
+        nodes = fg.get_file_nodes(sample_path)
+        # Should have file node + class + method + function
+        assert len(nodes) >= 4
+        # File node should be in results
+        assert sample_path in nodes
+
+    def test_get_file_nodes_empty_for_unknown_file(self) -> None:
+        """get_file_nodes returns empty list for unknown file."""
+        fg = FileGraph()
+        assert fg.get_file_nodes("/nonexistent.py") == []
+
+    def test_get_subgraph_returns_structured_dict(self, tmp_path) -> None:
+        """get_subgraph returns dict with file, nodes, edges, dependencies."""
+        code_a = '''
+import os
+
+class MyClass:
+    def method(self):
+        pass
+'''
+        (tmp_path / "a.py").write_text(code_a)
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        a_path = str(tmp_path / "a.py")
+        result = fg.get_subgraph(a_path)
+        assert "file" in result
+        assert "nodes" in result
+        assert "edges" in result
+        assert "dependencies" in result
+        assert "dependents" in result
+        assert "impact_summary" in result
+        assert result["file"] == a_path
+        assert isinstance(result["nodes"], list)
+        assert isinstance(result["edges"], list)
+        assert isinstance(result["dependencies"], list)
+        assert isinstance(result["dependents"], list)
+        assert "direct_dependencies" in result["impact_summary"]
+        assert "direct_dependents" in result["impact_summary"]
+
+    def test_get_subgraph_edges_have_source_target(self, tmp_path) -> None:
+        """get_subgraph edges have source, target, and edge_type."""
+        code = '''
+class MyClass:
+    def method(self):
+        pass
+'''
+        (tmp_path / "sample.py").write_text(code)
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+
+        sample_path = str(tmp_path / "sample.py")
+        result = fg.get_subgraph(sample_path)
+        # Should have CONTAINS edges
+        contains_edges = [
+            e for e in result["edges"]
+            if e.get("edge_type") == "CONTAINS"
+        ]
+        assert len(contains_edges) > 0
+        for edge in contains_edges:
+            assert "source" in edge
+            assert "target" in edge
+
+    def test_get_subgraph_unknown_file(self, tmp_path) -> None:
+        """get_subgraph handles unknown file gracefully."""
+        fg = FileGraph(root_path=str(tmp_path))
+        fg.build_graph(str(tmp_path))
+        result = fg.get_subgraph(str(tmp_path / "nonexistent.py"))
+        assert result["file"] == str(tmp_path / "nonexistent.py")
+        assert result["nodes"] == []
+        assert result["edges"] == []
