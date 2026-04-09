@@ -16,7 +16,7 @@
 - **Verdict:** PASS_WITH_NOTES (0 CRITICAL, 2 MAJOR deferred, 4 MINOR, 3 NIT)
 - **Review:** 2-REVIEW.md
 - **MAJOR deferred:** No session cleanup/pruning mechanism, list_sessions() O(n) memory — both growth concerns for Phase 4
-- **MINOR to fix in Phase 3:** Input validation on store_messages(), empty batch test, unused import cleanup
+- **MINOR to fix in Phase 3:** ~~Input validation on store_messages()~~ ✅ FIXED, ~~empty batch test~~ ✅ FIXED, ~~unused import cleanup~~ ✅ FIXED
 
 ## Phase 1 Results
 - **UAT:** 1-UAT.md — PASS (8/8 requirements verified)
