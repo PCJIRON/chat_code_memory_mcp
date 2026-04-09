@@ -12,8 +12,15 @@
 - **Summary:** 2-01-SUMMARY.md
 - **MVP:** ✅ COMPLETE — ping, store_chat, query_chat all working
 
+## Phase 2 Review
+- **Verdict:** PASS_WITH_NOTES (0 CRITICAL, 2 MAJOR deferred, 4 MINOR, 3 NIT)
+- **Review:** 2-REVIEW.md
+- **MAJOR deferred:** No session cleanup/pruning mechanism, list_sessions() O(n) memory — both growth concerns for Phase 4
+- **MINOR to fix in Phase 3:** Input validation on store_messages(), empty batch test, unused import cleanup
+
 ## Phase 1 Results
 - **UAT:** 1-UAT.md — PASS (8/8 requirements verified)
+- **Review:** 1-REVIEW.md — PASS_WITH_NOTES
 - **Shipped:** `c465155` — Phase 1 UAT PASS committed. No PR created (no remote, no gh CLI, personal local project).
 - **Deferred items:** numpy import, README, dep weight, unused import, doc inconsistency (all cosmetic)
 
