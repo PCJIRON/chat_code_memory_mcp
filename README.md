@@ -8,6 +8,7 @@ An MCP server that stores chat history in ChromaDB and tracks file changes using
 - 📁 **File Change Tracking** — Build and query file relationship graphs with NetworkX
 - 🔍 **Token-Efficient Context** — Get compressed context optimized for LLM consumption (minimal/summary/full)
 - 🤖 **Automatic Mode** — Zero-touch auto-save, auto-retrieve, and auto-track (Phase 5)
+- 🧠 **Hybrid Context System** — Semantic intent classification + unified ChromaDB + FileGraph dual-source retrieval (Phase 6)
 - 🏠 **Local-First** — All data stored locally, no cloud APIs, no external dependencies beyond pip packages
 - 🔌 **MCP Protocol** — Stdio-based transport compatible with any MCP client
 
@@ -68,7 +69,7 @@ The server runs on stdio transport by default. Connect it to any MCP-compatible 
 
 ## MCP Tools
 
-The server provides **9 tools** across 3 domains:
+The server provides **10 tools** across 3 domains:
 
 ### Core
 
@@ -81,7 +82,7 @@ Check server status and readiness.
 ```json
 {
   "status": "ok",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "storage": "chromadb-ready"
 }
 ```
@@ -220,6 +221,53 @@ Get the file relationship subgraph for a specific file.
 
 ---
 
+#### `query_file_changes`
+Query file change history by semantic similarity with optional filters. Searches both chat history and file changes stored in unified ChromaDB.
+
+**Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query` | `str` | — | Natural language search query |
+| `top_k` | `int` | `5` | Number of results to return (1–50) |
+| `date_from` | `str | None` | `None` | ISO 8601 start date (e.g. `2024-01-01T00:00:00`) |
+| `date_to` | `str | None` | `None` | ISO 8601 end date |
+| `file_path` | `str | None` | `None` | Filter to specific file path |
+| `change_type` | `str | None` | `None` | Filter by type: `"modified"`, `"created"`, `"deleted"` |
+
+**Example:**
+```json
+{
+  "query": "which files changed last week",
+  "top_k": 5,
+  "date_from": "2026-04-03T00:00:00",
+  "date_to": "2026-04-10T23:59:59"
+}
+```
+
+**Returns:**
+```json
+{
+  "query": "which files changed last week",
+  "total_found": 3,
+  "results": [
+    {
+      "content": "modified src/chat_store.py: Added store_file_change...",
+      "type": "file_change",
+      "file_path": "src/chat_store.py",
+      "change_type": "modified",
+      "symbols": ["store_file_change", "query_file_changes"],
+      "timestamp": "2026-04-08T14:30:00+00:00",
+      "distance": 0.1234,
+      "similarity": 0.8766
+    }
+  ]
+}
+```
+
+> **Note:** File changes are automatically logged when `track_files` runs or when the file watcher detects changes. No manual setup needed.
+
+---
+
 ### Context Retrieval
 
 #### `get_context`
@@ -251,12 +299,14 @@ Every MCP tool call and response is **automatically captured and saved** to Chro
 - **Truncation:** Large results (>500 chars) are truncated with "..."
 
 ### Auto-Retrieve
-Before each tool call, **~300 tokens of relevant context** are automatically queried from ChromaDB and appended to the response.
+Before each tool call, **~300 tokens of relevant context** are automatically queried from ChromaDB + FileGraph and injected into the response.
 
-- **How it works:** `ContextInjector` queries ChromaDB using `format_with_detail(level="summary")`
-- **Token Budget:** ~300 tokens by default (configurable via `auto_context_tokens`)
+- **How it works:** `ContextInjector` uses `HybridContextBuilder` with semantic intent classification
+- **Intent Classification:** Pre-computed sentence-transformers centroids classify query intent (chat/file/both)
+- **Dual-Source Retrieval:** Queries ChromaDB (chat + file changes) + FileGraph based on detected intent
+- **Token Budget:** ~300 tokens by default (configurable via `auto_context_tokens`, 60/40 chat/file split)
+- **Dual Injection:** `[SYSTEM CONTEXT: ...]` format + source attribution for maximum LLM comprehension
 - **Skipped Tools:** `ping`, `list_sessions`, `get_file_graph`, `delete_session` (non-query tools don't benefit)
-- **Marker:** Context is clearly marked with `[Auto-Context]` header
 
 ### Auto-Track
 A **background file watcher** monitors your code directories and automatically updates the file graph when files change.
@@ -323,11 +373,14 @@ To disable a feature, set it to `false` in `./data/config.json`:
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │              _intercepted_call_tool (monkey-patched)          │  │
 │  │                                                               │  │
-│  │  1. ContextInjector.inject() → ~300 tokens appended           │  │
-│  │  2. AutoSaveMiddleware.on_tool_call() → buffer                │  │
-│  │  3. Original Tool Execution → Response                        │  │
-│  │  4. AutoSaveMiddleware.on_tool_response() → flush to ChromaDB │  │
-│  │  5. Return result (+ context if string)                       │  │
+│  │  1. _extract_query_from_arguments() → actual user query       │  │
+│  │  2. IntentClassifier.classify() → chat/file/both intent       │  │
+│  │  3. HybridContextBuilder.build() → ChromaDB + FileGraph       │  │
+│  │  4. ContextInjector.inject() → [SYSTEM CONTEXT: ...] format   │  │
+│  │  5. AutoSaveMiddleware.on_tool_call() → buffer                │  │
+│  │  6. Original Tool Execution → Response                        │  │
+│  │  7. AutoSaveMiddleware.on_tool_response() → flush to ChromaDB │  │
+│  │  8. Return result (+ hybrid context if string)                │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────────┐ │
@@ -335,34 +388,37 @@ To disable a feature, set it to `false` in `./data/config.json`:
 │  │              │  │              │  │                           │ │
 │  │  • ping      │  │  • store_chat│  │  • track_files            │ │
 │  │              │  │  • query_chat│  │  • get_file_graph         │ │
-│  │              │  │  • list_sess │  │                           │ │
-│  │              │  │  • delete_sess│ │  ┌───────────────────────┐│ │
-│  │              │  │  • prune_sess │  │  │    FileGraph (NX)    ││ │
-│  │              │  │  • get_context│  │  │  • DiGraph            ││ │
-│  └──────┬───────┘  └──────┬───────┘  │  │  • SHA-256 tracking  ││ │
+│  │              │  │  • list_sess │  │  • query_file_changes     │ │
+│  │              │  │  • delete_sess│ │                           │ │
+│  │              │  │  • prune_sess │  │  ┌───────────────────────┐│ │
+│  │              │  │  • get_context│  │  │    FileGraph (NX)    ││ │
+│  └──────┬───────┘  └──────┬───────┘  │  │  • DiGraph            ││ │
+│         │                 │          │  │  • SHA-256 tracking  ││ │
 │         │                 │          │  │  • Incremental update ││ │
+│         │                 │          │  │  • FileChange hooks  ││ │
 │         │                 │          └───────────┬───────────┘│ │
 │         │                 │                        │              │
 │         │                 ▼                        │              │
-│         │          ┌──────────────┐               │              │
-│         │          │  Context System│               │              │
-│         │          │              │               │              │
-│         │          │  • ContextBuilder              │              │
-│         │          │  • get_minimal_context         │              │
-│         │          │  • format_with_detail          │              │
-│         │          │    (minimal/summary/full)      │              │
-│         │          └──────────────┘               │              │
+│         │          ┌─────────────────────────┐    │              │
+│         │          │  Hybrid Context System  │    │              │
+│         │          │                         │    │              │
+│         │          │  • IntentClassifier     │    │              │
+│         │          │  • HybridContextBuilder │    │              │
+│         │          │  • ContextInjector      │    │              │
+│         │          │    (dual injection)     │    │              │
+│         │          └─────────────────────────┘    │              │
 │         │                                         │              │
 └─────────┼─────────────────────────────────────────┼──────────────┘
           │                                         │
           ▼                                         ▼
 ┌─────────────────────┐               ┌─────────────────────────────┐
 │   ChromaDB          │               │   File System               │
-│   (Vector Storage)  │               │   (code files parsed)       │
+│   (Unified Storage) │               │   (code files parsed)       │
 │                     │               │                             │
 │  • Chat messages    │               │  • NetworkX DiGraph         │
-│  • Semantic search  │               │  • ASTParser (tree-sitter)  │
-│  • Session index    │               │  • JSON persistence         │
+│  • File changes     │               │  • ASTParser (tree-sitter)  │
+│  • Semantic search  │               │  • JSON persistence         │
+│  • Intent centroids │               │  • FileChange hooks         │
 │  • Auto-save buffer │               │                             │
 └─────────────────────┘               └──────────────┬──────────────┘
                                                      │
@@ -376,14 +432,15 @@ To disable a feature, set it to `false` in `./data/config.json`:
 
 ### Data Flow
 
-1. **Chat Storage:** Client → `store_chat` → ChromaDB (vector embeddings) → Session Index (JSON)
+1. **Chat Storage:** Client → `store_chat` → ChromaDB (vector embeddings, `type="chat"`) → Session Index (JSON)
 2. **Chat Query:** Client → `query_chat` → ChromaDB semantic search → Python date/role filtering → Results
-3. **Context Retrieval:** Client → `get_context` → ContextBuilder → Compression → Formatted output
-4. **File Tracking:** Client → `track_files` → ASTParser (tree-sitter) → FileGraph (NetworkX) → JSON
+3. **Hybrid Context Retrieval:** Tool call → IntentClassifier → HybridContextBuilder → ChromaDB + FileGraph → Token-optimized context
+4. **File Tracking:** Client → `track_files` → ASTParser (tree-sitter) → FileGraph (NetworkX) → JSON + FileChangeLog → ChromaDB
 5. **File Query:** Client → `get_file_graph` → Graph traversal → Dependencies/dependents → Subgraph
-6. **Auto-Save:** Tool call/response → AutoSaveMiddleware → Buffer → ChromaDB (automatic)
-7. **Auto-Retrieve:** Tool call → ContextInjector → ~300 tokens appended → Response (automatic)
-8. **Auto-Track:** File change → watchdog Observer → debounce → FileGraph.update_graph (automatic)
+6. **File Change Query:** Client → `query_file_changes` → ChromaDB (`type="file_change"`) → Date/file/type filtering → Results
+7. **Auto-Save:** Tool call/response → AutoSaveMiddleware → Buffer → ChromaDB (automatic)
+8. **Auto-Retrieve:** Tool call → `_extract_query_from_arguments()` → IntentClassifier → HybridContextBuilder → `[SYSTEM CONTEXT: ...]` injection (automatic)
+9. **Auto-Track:** File change → watchdog Observer → debounce → FileGraph.update_graph → FileChangeLog → ChromaDB (automatic)
 
 ## Configuration
 
@@ -462,7 +519,7 @@ python -m pytest tests/test_auto_save.py -v
 python -m pytest tests/ --cov=context_memory_mcp
 ```
 
-**Test Count:** 224 tests (191 existing + 33 Phase 5)
+**Test Count:** 276 tests (224 existing + 52 Phase 6)
 
 ## Project Structure
 
@@ -470,25 +527,26 @@ python -m pytest tests/ --cov=context_memory_mcp
 memory/
 ├── src/
 │   └── context_memory_mcp/
-│       ├── __init__.py           # Package version + config exports
-│       ├── cli.py                # CLI entry point
-│       ├── mcp_server.py         # FastMCP server + auto wiring
-│       ├── chat_store.py         # ChromaDB chat history storage
-│       ├── context.py            # Token-efficient context retrieval
-│       ├── file_graph.py         # NetworkX file relationship graph
-│       ├── parser.py             # AST/tree-sitter symbol parser
-│       ├── config.py             # AutoConfig dataclass (Phase 5)
-│       ├── auto_save.py          # Auto-save middleware (Phase 5)
-│       ├── auto_retrieve.py      # Context injector (Phase 5)
-│       └── file_watcher.py       # Watchdog file watcher (Phase 5)
-├── tests/                        # 276 pytest tests
-├── data/                         # Runtime data
-│   ├── chromadb/                 # ChromaDB vector storage (chat + file changes)
-│   ├── config.json               # Auto configuration (Phase 5)
-│   ├── session_index.json        # Session index for O(1) listing
-│   └── file_graph.json           # File graph persistence
-├── scripts/                      # Utility scripts
-└── pyproject.toml                # Project metadata
+│       ├── __init__.py              # Package version + config exports
+│       ├── cli.py                   # CLI entry point
+│       ├── mcp_server.py            # FastMCP server + auto wiring + hybrid context
+│       ├── chat_store.py            # ChromaDB unified storage (chat + file changes)
+│       ├── context.py               # HybridContextBuilder + intent classification
+│       ├── intent_classifier.py     # Semantic query classifier (sentence-transformers)
+│       ├── file_graph.py            # NetworkX file relationship graph + change hooks
+│       ├── parser.py                # AST/tree-sitter symbol parser
+│       ├── config.py                # AutoConfig dataclass (Phase 5)
+│       ├── auto_save.py             # Auto-save middleware (Phase 5)
+│       ├── auto_retrieve.py         # Hybrid context injector (Phase 6)
+│       └── file_watcher.py          # Watchdog file watcher + change logging (Phase 6)
+├── tests/                           # 276 pytest tests
+├── data/                            # Runtime data
+│   ├── chromadb/                    # ChromaDB unified storage (chat + file changes)
+│   ├── config.json                  # Auto configuration (Phase 5)
+│   ├── session_index.json           # Session index for O(1) listing
+│   └── file_graph.json              # File graph persistence
+├── scripts/                         # Utility scripts
+└── pyproject.toml                   # Project metadata
 ```
 
 ## Phase 6: Hybrid Context System
