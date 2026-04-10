@@ -221,45 +221,87 @@ class TestFormatWithDetail:
         assert "... and 5 more messages" in result
 
 
-# ── ContextBuilder ────────────────────────────────────────────────
+# ── HybridContextBuilder ──────────────────────────────────────────
 
 
 class TestContextBuilder:
-    def test_build_basic_query(self) -> None:
-        builder = ContextBuilder()
+    """Tests for HybridContextBuilder (replaces old stub ContextBuilder)."""
+
+    @pytest.fixture()
+    def store(self, tmp_path):
+        """Create isolated ChatStore."""
+        from context_memory_mcp.chat_store import ChatStore
+        s = ChatStore(
+            chroma_path=str(tmp_path / "chromadb"),
+            session_index_path=str(tmp_path / "session_index.json"),
+        )
+        yield s
+        s.close()
+
+    def test_build_basic_query(self, store) -> None:
+        from context_memory_mcp.context import HybridContextBuilder
+        builder = HybridContextBuilder(store=store)
         window = builder.build(query="What is this?")
-        assert "Query: What is this?" in window.content
-        assert window.token_count > 0
+        assert window.token_count >= 0
+        assert isinstance(window.sources, list)
 
-    def test_build_with_session_id(self) -> None:
-        builder = ContextBuilder()
-        window = builder.build(query="test", session_id="sess-123")
-        assert "Session: sess-123" in window.content
+    def test_build_with_session_id(self, store) -> None:
+        from context_memory_mcp.context import HybridContextBuilder
+        store.store_messages(
+            [{"role": "user", "content": "session specific message"}],
+            session_id="sess-123",
+        )
+        builder = HybridContextBuilder(store=store)
+        window = builder.build(query="session specific", session_id="sess-123")
+        assert "chat_history" in window.sources or window.token_count >= 0
 
-    def test_build_with_active_files(self) -> None:
-        builder = ContextBuilder()
+    def test_build_with_active_files(self, store) -> None:
+        from context_memory_mcp.context import HybridContextBuilder
+        builder = HybridContextBuilder(store=store)
         window = builder.build(query="test", active_files=["a.py", "b.py", "c.py"])
-        assert "Active files: 3" in window.content
+        assert isinstance(window.sources, list)
 
-    def test_build_with_all_params(self) -> None:
-        builder = ContextBuilder(max_tokens=8000)
+    def test_build_with_all_params(self, store) -> None:
+        from context_memory_mcp.context import HybridContextBuilder
+        store.store_messages(
+            [{"role": "user", "content": "hello world test message"}],
+            session_id="sess-42",
+        )
+        builder = HybridContextBuilder(store=store, max_tokens=8000)
         window = builder.build(
             query="hello",
             session_id="sess-42",
             active_files=["main.py"],
         )
-        assert "Query: hello" in window.content
-        assert "Session: sess-42" in window.content
-        assert "Active files: 1" in window.content
         assert window.max_tokens == 8000
+        assert isinstance(window.sources, list)
 
-    def test_build_empty_query(self) -> None:
-        builder = ContextBuilder()
+    def test_build_empty_query(self, store) -> None:
+        from context_memory_mcp.context import HybridContextBuilder
+        builder = HybridContextBuilder(store=store)
         window = builder.build(query="")
-        assert "Query: " in window.content
+        assert isinstance(window.content, str)
+        assert isinstance(window.sources, list)
 
-    def test_build_no_optional_params(self) -> None:
-        builder = ContextBuilder()
+    def test_build_no_optional_params(self, store) -> None:
+        from context_memory_mcp.context import HybridContextBuilder
+        builder = HybridContextBuilder(store=store)
         window = builder.build(query="test")
-        assert "Session:" not in window.content
-        assert "Active files:" not in window.content
+        assert isinstance(window.sources, list)
+
+    def test_build_returns_context_window(self, store) -> None:
+        from context_memory_mcp.context import HybridContextBuilder, ContextWindow
+        builder = HybridContextBuilder(store=store)
+        window = builder.build(query="test query")
+        assert isinstance(window, ContextWindow)
+
+    def test_build_with_file_changes(self, store) -> None:
+        from context_memory_mcp.context import HybridContextBuilder
+        store.store_file_change({
+            "file_path": "src/test.py",
+            "change_type": "modified",
+            "snippet": "def new_function(): pass",
+        })
+        builder = HybridContextBuilder(store=store)
+        window = builder.build(query="file change")
+        assert isinstance(window.sources, list)

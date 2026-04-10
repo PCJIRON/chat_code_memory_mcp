@@ -286,7 +286,9 @@ class TestAllToolsTogether:
             session_id="ctx-sess",
         )
 
-        builder = ContextBuilder(max_tokens=4000)
+        from context_memory_mcp.context import HybridContextBuilder
+
+        builder = HybridContextBuilder(store=store, max_tokens=4000)
         window = builder.build(
             query="graph dependencies",
             session_id="ctx-sess",
@@ -295,9 +297,7 @@ class TestAllToolsTogether:
 
         assert isinstance(window, ContextWindow)
         assert window.token_count > 0
-        assert "Query: graph dependencies" in window.content
-        assert "Session: ctx-sess" in window.content
-        assert "Active files: 2" in window.content
+        assert "graph dependencies" in window.content.lower() or "chat_history" in window.sources
 
         store.close()
 

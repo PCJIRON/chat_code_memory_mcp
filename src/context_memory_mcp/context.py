@@ -210,34 +210,56 @@ class ContextWindow:
         }
 
 
-class ContextBuilder:
+class HybridContextBuilder:
     """Builds token-efficient context windows from multiple sources.
 
-    Combines recent chat history, relevant file content, and
-    semantic search results into a single context window
-    optimized for LLM consumption.
+    Uses IntentClassifier to route queries to the appropriate data sources:
+    - Chat intent: queries ChromaDB chat history
+    - File intent: queries ChromaDB file changes
+    - Both intent: queries both sources, merges results
+    Token budget enforced with 60% chat / 40% file split.
 
     Attributes:
+        store: ChatStore instance for querying messages.
+        file_graph: Optional FileGraph for structural queries (T11).
+        classifier: IntentClassifier for intent routing.
         max_tokens: Maximum token budget for the context window.
+        chat_budget_pct: Percentage of budget for chat context.
     """
 
-    def __init__(self, max_tokens: int = 4000) -> None:
-        """Initialize the ContextBuilder.
+    def __init__(
+        self,
+        store,
+        file_graph=None,
+        classifier=None,
+        max_tokens: int = 4000,
+        chat_budget_pct: float = 0.6,
+    ) -> None:
+        """Initialize HybridContextBuilder.
 
         Args:
-            max_tokens: Maximum token budget for the context window.
+            store: ChatStore instance.
+            file_graph: Optional FileGraph instance.
+            classifier: IntentClassifier instance.
+            max_tokens: Maximum token budget.
+            chat_budget_pct: Fraction of budget for chat (rest for files).
         """
+        self.store = store
+        self.file_graph = file_graph
+        self.classifier = classifier
         self.max_tokens = max_tokens
+        self.chat_budget_pct = chat_budget_pct
 
     def build(
         self,
         query: str,
         session_id: str | None = None,
         active_files: list[str] | None = None,
-    ) -> ContextWindow:
+    ) -> "ContextWindow":
         """Build a context window relevant to the given query.
 
-        For MVP, returns minimal context with query and metadata.
+        Classifies intent, routes to appropriate data sources,
+        merges results, and enforces token budget.
 
         Args:
             query: The user's query or current request.
@@ -245,28 +267,128 @@ class ContextBuilder:
             active_files: Optional list of currently open/active files.
 
         Returns:
-            A ContextWindow with relevant context assembled.
+            A ContextWindow with merged context from relevant sources.
         """
-        parts = [f"Query: {query}"]
-        if session_id:
-            parts.append(f"Session: {session_id}")
-        if active_files:
-            parts.append(f"Active files: {len(active_files)}")
-        content = "\n".join(parts)
+        # Classify intent
+        if self.classifier:
+            intent = self.classifier.classify(query)
+        else:
+            intent = "both"  # Fallback without classifier
+
+        parts: list[str] = []
+        sources: list[str] = []
+        chat_budget = int(self.max_tokens * self.chat_budget_pct)
+        file_budget = self.max_tokens - chat_budget
+
+        # Retrieve chat context
+        if intent in ("chat", "both"):
+            chat_results = self.store.query_messages(
+                query=query, top_k=5, session_id=session_id
+            )
+            if chat_results:
+                chat_content = format_with_detail(
+                    {"query": query, "results": chat_results}, "summary"
+                )
+                if _estimate_tokens(chat_content) <= chat_budget + 50:
+                    parts.append(chat_content)
+                    sources.append("chat_history")
+                else:
+                    # Truncate to fit budget
+                    truncated = chat_content[: chat_budget * 4]
+                    parts.append(truncated)
+                    sources.append("chat_history")
+
+        # Retrieve file change context
+        if intent in ("file", "both"):
+            file_results = self.store.query_file_changes(
+                query=query, top_k=5
+            )
+            if file_results:
+                file_content = self._format_file_changes(file_results)
+                if _estimate_tokens(file_content) <= file_budget + 50:
+                    parts.append(file_content)
+                    sources.append("file_changes")
+                else:
+                    truncated = file_content[: file_budget * 4]
+                    parts.append(truncated)
+                    sources.append("file_changes")
+
+        # Merge content
+        content = "\n---\n".join(parts) if parts else (
+            f"No relevant context found for: {query}"
+        )
+
         return ContextWindow(
             content=content,
             token_count=_estimate_tokens(content),
             max_tokens=self.max_tokens,
+            sources=sources,
         )
+
+    @staticmethod
+    def _format_file_changes(results: list[dict]) -> str:
+        """Format file change results into a readable string.
+
+        Args:
+            results: List of file change result dicts from query_file_changes.
+
+        Returns:
+            Formatted string with file change information.
+        """
+        parts = [f"File Changes ({len(results)} results)", "---"]
+        for r in results:
+            change_type = r.get("change_type", "unknown")
+            file_path = r.get("file_path", "unknown")
+            content = r.get("content", "")
+            ts = r.get("timestamp", "")
+            sim = r.get("similarity", "N/A")
+
+            entry = f"[{change_type}] {file_path}"
+            if ts:
+                entry += f" ({ts})"
+            entry += f" [similarity: {sim}]"
+            if content:
+                if _estimate_tokens(content) > 50:
+                    content = content[:200] + "..."
+                entry += f"\n{content}"
+            parts.append(entry)
+
+        return "\n".join(parts)
+
+
+# Backward compatibility alias — ContextBuilder now points to HybridContextBuilder
+ContextBuilder = HybridContextBuilder
 
 
 def register(mcp: Any) -> None:
     """Register get_context MCP tool.
 
+    Creates HybridContextBuilder with store and optional graph/classifier.
+
     Args:
         mcp: FastMCP server instance.
     """
-    builder = ContextBuilder()
+    from context_memory_mcp.chat_store import get_store
+
+    store = get_store()
+
+    # Try to get optional dependencies (may not be wired yet)
+    file_graph = None
+    classifier = None
+    try:
+        from context_memory_mcp.file_graph import get_graph
+        file_graph = get_graph()
+    except Exception:
+        pass
+    try:
+        from context_memory_mcp.intent_classifier import get_intent_classifier
+        classifier = get_intent_classifier(embedding_function=store._ef)
+    except Exception:
+        pass
+
+    builder = HybridContextBuilder(
+        store=store, file_graph=file_graph, classifier=classifier
+    )
 
     @mcp.tool(
         name="get_context",
