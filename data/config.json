@@ -1,0 +1,17 @@
+{
+  "auto_save": true,
+  "auto_retrieve": true,
+  "auto_track": true,
+  "auto_context_tokens": 300,
+  "watch_dirs": [
+    "./src"
+  ],
+  "watch_ignore_dirs": [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "node_modules",
+    "data"
+  ],
+  "flush_interval_seconds": 30
+}

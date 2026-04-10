@@ -1,0 +1,310 @@
+{
+  "sessions": {
+    "test-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:38:58.106178+00:00",
+      "last_message": "2026-04-09T18:38:58.106178+00:00"
+    },
+    "eae44559-1364-4108-aa41-da589a28b571": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:38:58.610156+00:00",
+      "last_message": "2026-04-09T18:38:58.610156+00:00"
+    },
+    "batch-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:38:58.804106+00:00",
+      "last_message": "2026-04-09T18:38:58.804106+00:00"
+    },
+    "auto-role": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:38:59.169316+00:00",
+      "last_message": "2026-04-09T18:38:59.169316+00:00"
+    },
+    "persist-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:38:59.383721+00:00",
+      "last_message": "2026-04-09T18:38:59.383721+00:00"
+    },
+    "q-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:38:59.564604+00:00",
+      "last_message": "2026-04-09T18:38:59.564604+00:00"
+    },
+    "semantic-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:38:59.743761+00:00",
+      "last_message": "2026-04-09T18:38:59.743761+00:00"
+    },
+    "topk-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:38:59.954636+00:00",
+      "last_message": "2026-04-09T18:38:59.954636+00:00"
+    },
+    "no-match-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:00.187693+00:00",
+      "last_message": "2026-04-09T18:39:00.187693+00:00"
+    },
+    "sess-a": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:00.354221+00:00",
+      "last_message": "2026-04-09T18:39:00.354221+00:00"
+    },
+    "sess-b": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:00.400907+00:00",
+      "last_message": "2026-04-09T18:39:00.400907+00:00"
+    },
+    "date-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:00.529848+00:00",
+      "last_message": "2026-04-09T18:39:00.529848+00:00"
+    },
+    "date-sess-2": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:00.690523+00:00",
+      "last_message": "2026-04-09T18:39:00.690523+00:00"
+    },
+    "role-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:00.872108+00:00",
+      "last_message": "2026-04-09T18:39:00.872108+00:00"
+    },
+    "alpha": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:01.061147+00:00",
+      "last_message": "2026-04-09T18:39:01.061147+00:00"
+    },
+    "beta": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:01.120677+00:00",
+      "last_message": "2026-04-09T18:39:01.120677+00:00"
+    },
+    "gamma": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:01.157681+00:00",
+      "last_message": "2026-04-09T18:39:01.157681+00:00"
+    },
+    "to-keep": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:01.491468+00:00",
+      "last_message": "2026-04-09T18:39:01.491468+00:00"
+    },
+    "perf-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:01.728181+00:00",
+      "last_message": "2026-04-09T18:39:01.728181+00:00"
+    },
+    "perf-sess-q": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:01.905688+00:00",
+      "last_message": "2026-04-09T18:39:01.905688+00:00"
+    },
+    "new-session": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:02.193997+00:00",
+      "last_message": "2026-04-09T18:39:02.193997+00:00"
+    },
+    "sess-3": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:02.462489+00:00",
+      "last_message": "2026-04-09T18:39:02.462489+00:00"
+    },
+    "sess-4": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:02.493802+00:00",
+      "last_message": "2026-04-09T18:39:02.493802+00:00"
+    },
+    "new-1": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:02.829028+00:00",
+      "last_message": "2026-04-09T18:39:02.829028+00:00"
+    },
+    "new-2": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:02.864175+00:00",
+      "last_message": "2026-04-09T18:39:02.864175+00:00"
+    },
+    "keep-sess": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:03.130835+00:00",
+      "last_message": "2026-04-09T18:39:03.130835+00:00"
+    },
+    "second": {
+      "message_count": 1,
+      "first_message": "2026-04-09T18:39:03.447805+00:00",
+      "last_message": "2026-04-09T18:39:03.447805+00:00"
+    },
+    "session-2": {
+      "message_count": 3,
+      "first_message": "2026-04-09T19:10:19.114250+00:00",
+      "last_message": "2026-04-09T19:13:26.708740+00:00"
+    },
+    "session-3": {
+      "message_count": 3,
+      "first_message": "2026-04-09T19:10:19.146455+00:00",
+      "last_message": "2026-04-09T19:13:26.731836+00:00"
+    },
+    "test-session": {
+      "message_count": 55,
+      "first_message": "2026-04-09T20:27:16.074437+00:00",
+      "last_message": "2026-04-10T06:48:14.435585+00:00"
+    },
+    "inject-session": {
+      "message_count": 18,
+      "first_message": "2026-04-09T20:29:55.690686+00:00",
+      "last_message": "2026-04-10T06:49:51.332530+00:00"
+    },
+    "disabled-session": {
+      "message_count": 18,
+      "first_message": "2026-04-09T20:29:56.179910+00:00",
+      "last_message": "2026-04-10T06:49:51.637847+00:00"
+    },
+    "budget-session": {
+      "message_count": 18,
+      "first_message": "2026-04-09T20:29:56.301223+00:00",
+      "last_message": "2026-04-10T06:49:51.795428+00:00"
+    },
+    "session-A": {
+      "message_count": 18,
+      "first_message": "2026-04-09T20:29:56.647111+00:00",
+      "last_message": "2026-04-10T06:49:52.244967+00:00"
+    },
+    "session-B": {
+      "message_count": 18,
+      "first_message": "2026-04-09T20:29:56.706563+00:00",
+      "last_message": "2026-04-10T06:49:52.312855+00:00"
+    },
+    "e2e-session": {
+      "message_count": 19,
+      "first_message": "2026-04-09T20:37:26.446426+00:00",
+      "last_message": "2026-04-10T06:49:48.680346+00:00"
+    },
+    "retrieve-session": {
+      "message_count": 19,
+      "first_message": "2026-04-09T20:37:27.294768+00:00",
+      "last_message": "2026-04-10T06:49:49.005277+00:00"
+    },
+    "budget-e2e": {
+      "message_count": 19,
+      "first_message": "2026-04-09T20:37:27.724513+00:00",
+      "last_message": "2026-04-10T06:49:49.230026+00:00"
+    },
+    "disabled-e2e": {
+      "message_count": 19,
+      "first_message": "2026-04-09T20:37:29.583524+00:00",
+      "last_message": "2026-04-10T06:49:50.755030+00:00"
+    },
+    "full-pipeline": {
+      "message_count": 19,
+      "first_message": "2026-04-09T20:37:29.851607+00:00",
+      "last_message": "2026-04-10T06:49:50.970701+00:00"
+    },
+    "8dc4e2a7-d161-49db-a9eb-6e4533d857f1": {
+      "message_count": 1,
+      "first_message": "2026-04-09T20:54:04.996982+00:00",
+      "last_message": "2026-04-09T20:54:04.996982+00:00"
+    },
+    "9cf29577-8a20-4013-a735-a0073f5129da": {
+      "message_count": 1,
+      "first_message": "2026-04-09T20:57:19.425864+00:00",
+      "last_message": "2026-04-09T20:57:19.425864+00:00"
+    },
+    "41466d9c-e351-400f-baad-2b5314d684e6": {
+      "message_count": 1,
+      "first_message": "2026-04-09T21:19:47.549828+00:00",
+      "last_message": "2026-04-09T21:19:47.549828+00:00"
+    },
+    "ac480c7b-2f85-458b-b4c5-8b9286c547ee": {
+      "message_count": 1,
+      "first_message": "2026-04-09T21:24:18.350292+00:00",
+      "last_message": "2026-04-09T21:24:18.350292+00:00"
+    },
+    "690755df-6305-4deb-ac52-8e36b91b21d0": {
+      "message_count": 1,
+      "first_message": "2026-04-09T21:24:42.174165+00:00",
+      "last_message": "2026-04-09T21:24:42.174165+00:00"
+    },
+    "ea4f1ade-2945-44b7-9873-abf97923b898": {
+      "message_count": 1,
+      "first_message": "2026-04-09T21:33:22.278770+00:00",
+      "last_message": "2026-04-09T21:33:22.278770+00:00"
+    },
+    "f0b2cd17-caf8-4e7c-86c7-744b9e42ecec": {
+      "message_count": 1,
+      "first_message": "2026-04-09T21:34:23.204450+00:00",
+      "last_message": "2026-04-09T21:34:23.204450+00:00"
+    },
+    "eb83f352-01f7-405e-ad1e-ac69104ecff3": {
+      "message_count": 1,
+      "first_message": "2026-04-09T21:42:41.716752+00:00",
+      "last_message": "2026-04-09T21:42:41.716752+00:00"
+    },
+    "d2e3cbe8-24b7-46f4-83c6-732cbc0403d7": {
+      "message_count": 1,
+      "first_message": "2026-04-09T21:43:47.919550+00:00",
+      "last_message": "2026-04-09T21:43:47.919550+00:00"
+    },
+    "94244a6f-d0c7-4e02-beb2-b5496a677e14": {
+      "message_count": 1,
+      "first_message": "2026-04-09T21:53:27.242049+00:00",
+      "last_message": "2026-04-09T21:53:27.242049+00:00"
+    },
+    "8dc544b2-c028-4223-ac93-01f558bb5549": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:13:41.112811+00:00",
+      "last_message": "2026-04-10T07:13:41.112811+00:00"
+    },
+    "57197d6c-39f6-4f54-9fd1-0d5fe46eaf47": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:32:38.968181+00:00",
+      "last_message": "2026-04-10T07:32:38.968181+00:00"
+    },
+    "1c762332-1b83-427f-8be5-e57cfc9b92c6": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:35:31.805769+00:00",
+      "last_message": "2026-04-10T07:35:31.805769+00:00"
+    },
+    "70890e3e-ada0-4d90-be20-9e0e6d3ccfe8": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:40:34.421025+00:00",
+      "last_message": "2026-04-10T07:40:34.421025+00:00"
+    },
+    "2cb9ec0a-91de-4a64-a790-bc3ec96e7a86": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:42:12.567865+00:00",
+      "last_message": "2026-04-10T07:42:12.567865+00:00"
+    },
+    "326e40a7-f179-4b7a-9841-801430387eb9": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:42:37.848720+00:00",
+      "last_message": "2026-04-10T07:42:37.848720+00:00"
+    },
+    "42264d58-ada0-438e-829e-152903303c5c": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:43:11.921252+00:00",
+      "last_message": "2026-04-10T07:43:11.921252+00:00"
+    },
+    "31ec6d90-0ecf-49e3-9f5d-2333d627b0e1": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:43:26.415192+00:00",
+      "last_message": "2026-04-10T07:43:26.415192+00:00"
+    },
+    "4ff5594b-bfca-4764-b162-d6dc567732b3": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:43:48.571788+00:00",
+      "last_message": "2026-04-10T07:43:48.571788+00:00"
+    },
+    "a0f8f975-feb7-4553-89d7-3b7addfe501a": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:46:10.780359+00:00",
+      "last_message": "2026-04-10T07:46:10.780359+00:00"
+    },
+    "3ba40ab9-8e68-4655-9703-d69d0d347d9e": {
+      "message_count": 1,
+      "first_message": "2026-04-10T07:48:45.426799+00:00",
+      "last_message": "2026-04-10T07:48:45.426799+00:00"
+    }
+  },
+  "updated_at": "2026-04-10T07:48:45.585425+00:00"
+}

@@ -1,0 +1,61 @@
+{
+  "results": [
+    {
+      "req_id": "FR-4.1",
+      "description": "get_minimal_context ~100 tokens",
+      "status": "PASS",
+      "method": "Code execution",
+      "evidence": "token_count=62, max_tokens=100, within_budget=True. Content has recent user=True, assistant=True. Content preview: User: Thanks! What about type hints?\nAssistant: Type hints in Python were introduced in Python 3.5 v...",
+      "notes": ""
+    },
+    {
+      "req_id": "FR-4.2",
+      "description": "detail_level parameter (minimal/summary/full)",
+      "status": "PASS",
+      "method": "Code execution",
+      "evidence": "List: minimal=137 <= summary=280 <= full=497 \u2192 True. Dict: minimal=37 <= summary=105 <= full=287 \u2192 True. Invalid level raises ValueError: True",
+      "notes": ""
+    },
+    {
+      "req_id": "FR-4.3",
+      "description": "Context optimization (ContextBuilder.build)",
+      "status": "PASS",
+      "method": "Code execution",
+      "evidence": "ContextBuilder.build() returns ContextWindow with content='Query: What is Python?', token_count=5, fits()=True, to_dict() keys=['content', 'token_count', 'max_tokens', 'sources']. Session and active_files correctly included.",
+      "notes": ""
+    },
+    {
+      "req_id": "FR-2.4",
+      "description": "Date/conversation filtering on query_chat",
+      "status": "PASS",
+      "method": "Code execution",
+      "evidence": "Date range filter: 3 results, all in range=True. Session filter: 2 results, all session-a=True. Invalid date raises ValueError: True. Date swap handling: True (4 results).",
+      "notes": ""
+    },
+    {
+      "req_id": "FR-5.2",
+      "description": "get_context + prune_sessions MCP tools",
+      "status": "PASS",
+      "method": "Code execution",
+      "evidence": "register_context callable: True, has mcp param: True. ChatStore.prune_sessions exists: True, has before_date: True, has max_sessions: True. Prune by date: pruned=2, remaining=1. Prune by max_sessions: pruned=1, remaining=1.",
+      "notes": ""
+    },
+    {
+      "req_id": "NFR-2",
+      "description": "Performance: O(1) session index + single-parse",
+      "status": "PASS",
+      "method": "Code execution",
+      "evidence": "Session index is dict: True, sessions match index: True, Index file on disk: True. Single-parse: parse_file called 1 time(s) for 1 changed file. Update result: updated=1, unchanged=1.",
+      "notes": ""
+    },
+    {
+      "req_id": "TR-2",
+      "description": "Qualified name format: /absolute/path/file.py::SymbolName",
+      "status": "PASS",
+      "method": "Code execution",
+      "evidence": "Class: 'C:\\Users\\Hp\\OneDrive\\Desktop\\memory\\file.py::MyClass' \u2014 has '::': True, absolute path: True. Method: 'C:\\Users\\Hp\\OneDrive\\Desktop\\memory\\file.py::MyClass.my_method' \u2014 has '::': True. Function: 'C:\\Users\\Hp\\OneDrive\\Desktop\\memory\\file.py::my_function' \u2014 has '::': True. to_dict includes qualified_name: True.",
+      "notes": ""
+    }
+  ],
+  "overall": "PASS"
+}
