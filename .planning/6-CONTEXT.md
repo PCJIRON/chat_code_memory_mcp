@@ -1,5 +1,84 @@
 # Phase 6: Hybrid Context System & Auto-Retrieve Fix
 
+## Implementation Decisions
+
+### Decision 1: Context Injection Strategy
+- **Decision:** Both system prompt + response append (dual injection)
+- **Rationale:** System prompt ensures LLM sees context upfront; response append provides fallback
+- **Alternatives considered:** Response-only (current, LLM ignores it), System-prompt-only (harder with FastMCP)
+- **Trade-offs:** More complex implementation but maximum reliability
+
+### Decision 2: Query Classification Approach
+- **Decision:** Semantic classifier using existing `sentence-transformers` model (NOT keyword matching)
+- **Rationale:** User wants semantic understanding — model should understand intent, not match words
+- **Alternatives considered:** Rule-based keywords (rejected), ML with new model (rejected), Rules+LLM fallback (rejected — costs tokens)
+- **Trade-offs:** Uses already-downloaded model (zero new deps), semantic understanding, ~90%+ accuracy. Slightly more latency than keywords but much smarter.
+- **Implementation:** Embed user query → compare against pre-computed intent centroids (chat_intent vs file_intent vectors) → classify by nearest centroid
+
+### Decision 3: File Change History Storage
+- **Decision:** Store file changes in ChromaDB alongside chat messages (unified vector storage)
+- **Rationale:** Single query searches both chat history AND file changes semantically — no separate storage needed
+- **Alternatives considered:** JSON file (rejected), SQLite (rejected), Separate ChromaDB collection (rejected — defeats unified search purpose)
+- **Trade-offs:** Simpler architecture (one DB), semantic search across chat+files. ChromaDB handles all filtering. No new persistence logic.
+- **Implementation:** File changes stored as ChromaDB documents with metadata: `{type: "file_change", file_path, change_type, symbols_added, symbols_removed, snippet, timestamp}`
+
+### Decision 4: File Change Tracking Granularity
+- **Decision:** Full tracking — file path + timestamp + change type + symbol diff + code snippets
+- **Rationale:** User wants complete context — what changed, when, and actual code
+- **Alternatives considered:** Basic (path+time+type), Detailed (+symbols only)
+- **Trade-offs:** Higher storage cost but enables richest queries ("what imports changed last week", "show me the function that was modified")
+
+---
+
+## Updated Architecture
+
+### Unified ChromaDB Storage
+```
+ChromaDB Collection
+├── Chat Messages (role, content, timestamp, session_id)
+└── File Changes (type, file_path, change_type, symbols, snippet, timestamp)
+```
+
+### Semantic Query Flow
+```
+User Query
+    │
+    ▼
+┌──────────────────────────┐
+│ Semantic Classifier      │ ← sentence-transformers embedding
+│ (intent centroids)       │ ← Zero new dependencies
+└──────────┬───────────────┘
+           │
+     ┌─────┴─────┐
+     ▼           ▼
+┌─────────┐ ┌─────────────────┐
+│ChromaDB │ │ ChromaDB        │
+│ (chat)  │ │ (file changes)  │
+└────┬────┘ └─────┬──────────┘
+     │            │
+     └─────┬──────┘
+           ▼
+┌──────────────────────┐
+│ Merge & Deduplicate  │
+│ Token Optimizer      │
+└──────────┬───────────┘
+           ▼
+┌──────────────────────────────┐
+│ Dual Context Injection       │
+│ 1. System prompt prepend     │
+│ 2. Response append fallback  │
+└──────────────────────────────┘
+```
+
+### Intent Centroids (Pre-computed)
+```python
+CHAT_INTENT_EMBEDDING = embed("what did we discuss previously remember conversation said")
+FILE_INTENT_EMBEDDING = embed("which file changed import dependency structure impact")
+# User query embedded → nearest centroid determines intent
+```
+
+---
+
 ## Problem Statement
 
 ### Issue 1: Auto-Retrieve Not Working
