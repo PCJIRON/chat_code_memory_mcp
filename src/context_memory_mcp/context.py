@@ -313,6 +313,18 @@ class HybridContextBuilder:
                     parts.append(truncated)
                     sources.append("file_changes")
 
+            # Query FileGraph for structural context
+            if self.file_graph:
+                file_graph_content = self._query_file_graph(query, active_files)
+                if file_graph_content:
+                    if _estimate_tokens(file_graph_content) <= file_budget + 50:
+                        parts.append(file_graph_content)
+                        sources.append("file_graph")
+                    else:
+                        truncated = file_graph_content[: file_budget * 4]
+                        parts.append(truncated)
+                        sources.append("file_graph")
+
         # Merge content
         content = "\n---\n".join(parts) if parts else (
             f"No relevant context found for: {query}"
@@ -354,6 +366,79 @@ class HybridContextBuilder:
             parts.append(entry)
 
         return "\n".join(parts)
+
+    def _query_file_graph(
+        self, query: str, active_files: list[str] | None = None
+    ) -> str | None:
+        """Query FileGraph for structural context.
+
+        Extracts file paths from query and active_files, then queries
+        for dependencies and dependents.
+
+        Args:
+            query: User query string.
+            active_files: Optional list of active file paths.
+
+        Returns:
+            Formatted string with FileGraph information, or None.
+        """
+        if not self.file_graph:
+            return None
+
+        files_to_query = set()
+
+        # Extract file paths from active_files
+        if active_files:
+            files_to_query.update(active_files)
+
+        # Extract file paths from query text
+        query_files = self._extract_file_paths(query)
+        files_to_query.update(query_files)
+
+        if not files_to_query:
+            return None
+
+        import os
+
+        parts: list[str] = []
+        for f in files_to_query:
+            try:
+                deps = self.file_graph.get_dependencies(f)
+                dependents = self.file_graph.get_dependents(f)
+
+                basename = os.path.basename(f)
+                if deps:
+                    dep_names = ", ".join(os.path.basename(d) for d in deps)
+                    parts.append(f"Dependencies of {basename}: {dep_names}")
+                if dependents:
+                    dep_names = ", ".join(os.path.basename(d) for d in dependents)
+                    parts.append(f"Dependents of {basename}: {dep_names}")
+            except Exception:
+                continue  # Graceful degradation
+
+        if not parts:
+            return None
+
+        return "File Graph:\n" + "\n".join(parts)
+
+    @staticmethod
+    def _extract_file_paths(query: str) -> list[str]:
+        """Attempt to find file paths in query text.
+
+        Looks for common patterns: .py, .ts, .js files mentioned by name.
+
+        Args:
+            query: User query string.
+
+        Returns:
+            List of potential file paths found in the query.
+        """
+        import re
+
+        # Match file-like patterns: word.py, word.ts, etc.
+        pattern = r"\b[\w./\\-]+\.(?:py|ts|tsx|js|jsx|go|rs|java|c|cpp|h)\b"
+        matches = re.findall(pattern, query)
+        return matches
 
 
 # Backward compatibility alias — ContextBuilder now points to HybridContextBuilder
