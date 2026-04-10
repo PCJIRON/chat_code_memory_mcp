@@ -22,6 +22,7 @@ class AutoTrackHandler(FileSystemEventHandler):
         graph: FileGraph instance to update.
         root_dir: Root directory being watched.
         ignore_dirs: Set of directory names to ignore.
+        store: Optional ChatStore for logging file changes.
     """
 
     def __init__(
@@ -29,6 +30,7 @@ class AutoTrackHandler(FileSystemEventHandler):
         graph,
         root_dir: str,
         ignore_dirs: list[str],
+        store=None,
     ) -> None:
         """Initialize AutoTrackHandler.
 
@@ -36,10 +38,12 @@ class AutoTrackHandler(FileSystemEventHandler):
             graph: FileGraph instance to update on file changes.
             root_dir: Root directory being watched.
             ignore_dirs: Directory names to ignore (e.g. .git, __pycache__).
+            store: Optional ChatStore for logging file changes to ChromaDB.
         """
         self.graph = graph
         self.root_dir = os.path.abspath(root_dir)
         self.ignore_dirs = set(ignore_dirs)
+        self.store = store
         self._last_event = 0.0
         self._debounce = 0.5  # seconds (OneDrive handling)
 
@@ -67,6 +71,37 @@ class AutoTrackHandler(FileSystemEventHandler):
         self._last_event = now
         return False
 
+    def _store_file_change(self, file_path: str, change_type: str) -> None:
+        """Store a file change document in ChromaDB (optional hook).
+
+        Args:
+            file_path: Path to the changed file.
+            change_type: Type of change (modified/created/deleted).
+        """
+        if self.store is None:
+            return
+        try:
+            from datetime import datetime, timezone
+
+            snippet = ""
+            if change_type != "deleted":
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        snippet = f.read()[:200]
+                except Exception:
+                    pass
+
+            self.store.store_file_change({
+                "file_path": file_path,
+                "change_type": change_type,
+                "symbols_added": "",
+                "symbols_removed": "",
+                "snippet": snippet,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            logging.error(f"Failed to store file change: {e}")
+
     def on_modified(self, event) -> None:  # noqa: ANN001
         """Handle file modification event.
 
@@ -76,6 +111,7 @@ class AutoTrackHandler(FileSystemEventHandler):
         if event.is_directory or self._should_ignore(event.src_path) or self._debounce_event():
             return
         try:
+            self._store_file_change(event.src_path, "modified")
             self.graph.update_graph(self.root_dir)
         except Exception as e:
             logging.error(f"Auto-track failed: {e}")
@@ -86,7 +122,27 @@ class AutoTrackHandler(FileSystemEventHandler):
         Args:
             event: FileSystemEvent from watchdog.
         """
-        self.on_modified(event)
+        if event.is_directory or self._should_ignore(event.src_path):
+            return
+        try:
+            self._store_file_change(event.src_path, "created")
+            self.graph.update_graph(self.root_dir)
+        except Exception as e:
+            logging.error(f"Auto-track failed: {e}")
+
+    def on_deleted(self, event) -> None:  # noqa: ANN001
+        """Handle file deletion event.
+
+        Args:
+            event: FileSystemEvent from watchdog.
+        """
+        if event.is_directory or self._should_ignore(event.src_path):
+            return
+        try:
+            self._store_file_change(event.src_path, "deleted")
+            self.graph.update_graph(self.root_dir)
+        except Exception as e:
+            logging.error(f"Auto-track failed: {e}")
 
 
 class FileWatcher:
@@ -99,6 +155,7 @@ class FileWatcher:
         watch_dirs: Directories to monitor.
         ignore_dirs: Directory names to skip.
         graph: FileGraph to update on changes.
+        store: Optional ChatStore for logging file changes.
     """
 
     def __init__(
@@ -106,6 +163,7 @@ class FileWatcher:
         watch_dirs: list[str],
         ignore_dirs: list[str],
         graph,
+        store=None,
     ) -> None:
         """Initialize FileWatcher.
 
@@ -113,10 +171,12 @@ class FileWatcher:
             watch_dirs: List of directories to monitor.
             ignore_dirs: Directory names to ignore within watched dirs.
             graph: FileGraph instance to update on changes.
+            store: Optional ChatStore for logging file changes to ChromaDB.
         """
         self.watch_dirs = watch_dirs
         self.ignore_dirs = ignore_dirs
         self.graph = graph
+        self.store = store
         self._observer = Observer()
         self._running = False
 
@@ -127,7 +187,9 @@ class FileWatcher:
         Non-existent directories are skipped with a warning.
         """
         root_dir = self.watch_dirs[0] if self.watch_dirs else "."
-        handler = AutoTrackHandler(self.graph, root_dir, self.ignore_dirs)
+        handler = AutoTrackHandler(
+            self.graph, root_dir, self.ignore_dirs, store=self.store
+        )
 
         for d in self.watch_dirs:
             if os.path.isdir(d):
