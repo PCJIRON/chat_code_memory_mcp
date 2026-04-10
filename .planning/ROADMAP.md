@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Total Phases** | 4 |
-| **Estimated Duration** | 2–3 days (weekend) |
+| **Total Phases** | 6 |
+| **Estimated Duration** | 2–3 days (weekend) + Phase 5-6 extensions |
 | **MVP** | Phase 1 + Phase 2 |
-| **Total Plans** | ~18 |
+| **Total Plans** | ~18 + Phase 5-6 extensions |
 | **Target Commits** | ~18 (one per task) |
 
 ### Requirement Priority Map
@@ -19,6 +19,9 @@
 | **P1 (Should-have)** | FR-3.1–3.4, FR-5.2 (track_files, get_file_graph) | Phase 3 |
 | **P1 (Should-have)** | FR-4.1–4.3, FR-2.4 (date filter) | Phase 4 |
 | **P2 (Nice-to-have)** | NFR-2 parallel parsing, watchdog | Phase 4 |
+| **P0 (Critical Fix)** | Auto-retrieve not working, get_context stub | Phase 6 |
+| **P0 (Must-have)** | Hybrid context system (ChromaDB + FileGraph) | Phase 6 |
+| **P1 (Should-have)** | File change history tracking | Phase 6 |
 
 ### Dependency Graph
 
@@ -26,9 +29,14 @@
 Phase 1: Foundation ──→ Phase 2: Chat Memory ──→ Phase 4: Integration & Polish
                           │                           ↑
                           └──→ Phase 3: File Graph ───┘
+                                           │
+                                    Phase 5: Auto Save/Track/Retrieve
+                                           │
+                                    Phase 6: Hybrid Context & Fix Auto-Retrieve
 ```
 
 Phase 2 and Phase 3 are **independent** and can be worked on in parallel (separate waves).
+Phase 6 depends on all previous phases being complete.
 
 ---
 
@@ -143,6 +151,36 @@ Phase 2 and Phase 3 are **independent** and can be worked on in parallel (separa
 
 ---
 
+## Phase 6: Hybrid Context System & Auto-Retrieve Fix
+
+**Theme:** Unified ChromaDB + FileGraph retrieval, fix broken auto-retrieve, time-based file history
+**Goal:** Auto-retrieve works without manual prompting; `get_context` returns actual hybrid data; file change history queryable
+**Estimated Duration:** 10-14 hours
+**Success Criteria:** Auto-retrieve fires correctly; `get_context` returns ChromaDB + FileGraph results; file history queryable by date; 280+ tests passing
+
+| Task | Requirement | Commit Title |
+|---|---|---|
+| 6.1 Fix query extraction in `_intercepted_call_tool` — use actual user query, not tool name | — | `[GSD-6-01-T1] fix query extraction in auto-retrieve interceptor` |
+| 6.2 Verify monkey-patch actually triggers — add debug logging, check config flags | — | `[GSD-6-01-T2] verify and fix monkey-patch interception mechanism` |
+| 6.3 Implement query classifier — rule-based intent routing (chat/file/both) | — | `[GSD-6-01-T3] implement query classifier for intent routing` |
+| 6.4 Implement HybridContextBuilder — dual-source retrieval with merge & dedup | — | `[GSD-6-01-T4] implement HybridContextBuilder with dual-source retrieval` |
+| 6.5 Rewrite `get_context` MCP tool — actual hybrid retrieval, not stub | FR-4.1, FR-4.2 | `[GSD-6-01-T5] rewrite get_context MCP tool with actual hybrid retrieval` |
+| 6.6 Add merge & dedup logic — remove duplicates, prioritize recent, score by relevance | — | `[GSD-6-01-T6] add merge and dedup logic for hybrid results` |
+| 6.7 Add token optimization — smart truncation within budget | FR-4.3 | `[GSD-6-01-T7] add token optimization to hybrid context builder` |
+| 6.8 Implement FileChangeLog — append-only file change history with time-based queries | — | `[GSD-6-01-T8] implement FileChangeLog for time-based file history` |
+| 6.9 Hook FileChangeLog into `track_files` — log deltas on each run | — | `[GSD-6-01-T9] hook FileChangeLog into track_files MCP tool` |
+| 6.10 Register `get_file_history` MCP tool — query by date, file, change type | — | `[GSD-6-01-T10] register get_file_history MCP tool` |
+| 6.11 Update ContextInjector to use hybrid system — ChromaDB + FileGraph | FR-4.1 | `[GSD-6-01-T11] update ContextInjector to use hybrid retrieval` |
+| 6.12 Improve auto-context format — clear headers, structured sections, LLM-friendly | — | `[GSD-6-01-T12] improve auto-context format for LLM comprehension` |
+| 6.13 Write tests for query classifier + HybridContextBuilder | — | `[GSD-6-01-T13] add unit tests for query classifier` |
+| 6.14 Write tests for HybridContextBuilder — retrieval, dedup, token budget | — | `[GSD-6-01-T14] add unit tests for HybridContextBuilder` |
+| 6.15 Write tests for FileChangeLog + e2e auto-retrieve | — | `[GSD-6-01-T15] add tests for FileChangeLog and e2e auto-retrieve` |
+| 6.16 Update README — document hybrid system, auto-retrieve fix, file history | — | `[GSD-6-01-T16] update README with hybrid context documentation` |
+
+**Phase 6 Deliverable:** Working auto-retrieve with hybrid ChromaDB + FileGraph context, time-based file history, 280+ tests.
+
+---
+
 ## Milestones
 
 | Milestone | Trigger | Expected |
@@ -152,6 +190,7 @@ Phase 2 and Phase 3 are **independent** and can be worked on in parallel (separa
 | **M3: File Graph** | Phase 3 complete — parse, build, track, query file relationships | Day 2, evening |
 | **M4: Ship** | Phase 4 complete — all tools tested, token-efficient, documented | Day 3 |
 | **M5: Zero-Touch** | Phase 5 complete — auto-save, auto-track, auto-retrieve | Day 3, evening |
+| **M6: Hybrid Context** | Phase 6 complete — working auto-retrieve, hybrid ChromaDB+FileGraph, file history | Phase 6 end |
 
 ---
 

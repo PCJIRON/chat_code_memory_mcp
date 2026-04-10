@@ -1,9 +1,28 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PHASE_5_VERIFIED — integration verification passed, 224/224 tests passing
-- **Last Action**: Phase 5 integration verification complete — 5-VERIFICATION.md created (PASS)
-- **Next Step**: Ship Phase 5 or proceed to next phase
+- **Status**: PHASE_6_PLANNED — Phase 6 plan created, awaiting user approval
+- **Last Action**: Phase 6 plan document created (6-01-PLAN.md, 6-CONTEXT.md)
+- **Next Step**: User approval → Begin Phase 6 execution
+
+## Phase 6 Plan Summary (PENDING APPROVAL)
+- **Context:** 6-CONTEXT.md — Hybrid context system + auto-retrieve fix
+- **Plan:** 6-01-PLAN.md (16 tasks, 5 waves)
+- **Scope:** 
+  - Fix auto-retrieve (query extraction + monkey-patch verification)
+  - Build HybridContextBuilder (ChromaDB + FileGraph intelligent routing)
+  - Implement FileChangeLog (time-based file history)
+  - Rewrite get_context with actual hybrid retrieval
+- **Waves:**
+  - Wave 1: T1-T2 (Fix auto-retrieve root cause)
+  - Wave 2: T3-T7 (Hybrid context builder with query classifier)
+  - Wave 3: T8-T10 (File change history tracking)
+  - Wave 4: T11-T12 (Hybrid auto-retrieve)
+  - Wave 5: T13-T16 (Tests + README)
+- **Expected Tests:** 280+ (224 existing + ~56 new)
+- **No New Dependencies**
+
+## Project Final Stats
 
 ## Phase 5 Plan Summary
 - **Research:** 5-RESEARCH.md — FastMCP monkey-patch, watchdog 5.0.3, OneDrive debounce, config dataclass
