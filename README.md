@@ -481,15 +481,83 @@ memory/
 │       ├── auto_save.py          # Auto-save middleware (Phase 5)
 │       ├── auto_retrieve.py      # Context injector (Phase 5)
 │       └── file_watcher.py       # Watchdog file watcher (Phase 5)
-├── tests/                        # 224 pytest tests
+├── tests/                        # 276 pytest tests
 ├── data/                         # Runtime data
-│   ├── chromadb/                 # ChromaDB vector storage
+│   ├── chromadb/                 # ChromaDB vector storage (chat + file changes)
 │   ├── config.json               # Auto configuration (Phase 5)
 │   ├── session_index.json        # Session index for O(1) listing
 │   └── file_graph.json           # File graph persistence
 ├── scripts/                      # Utility scripts
 └── pyproject.toml                # Project metadata
 ```
+
+## Phase 6: Hybrid Context System
+
+### Semantic Intent Classification
+
+The server automatically classifies user queries into intent categories using the existing `sentence-transformers` model:
+
+- **Chat intent** — Queries about past conversations (e.g., "What did we discuss?", "Remember what I said")
+- **File intent** — Queries about code changes and structure (e.g., "Which files changed?", "Import dependencies")
+- **Both intent** — Ambiguous queries that may benefit from both sources
+
+Intent classification uses pre-computed centroid embeddings at startup — zero new dependencies, ~10-50ms latency per query.
+
+### Unified ChromaDB Storage
+
+Both chat messages and file change history are stored in the same ChromaDB collection with `type` metadata:
+
+```
+ChromaDB Collection (chat_history)
+├── Chat Messages (type="chat" or missing, role, content, timestamp, session_id)
+└── File Changes (type="file_change", file_path, change_type, symbols, snippet, timestamp)
+```
+
+This enables unified semantic search across both data types while supporting filtered queries.
+
+### Hybrid Context Builder
+
+The `HybridContextBuilder` replaces the stub `ContextBuilder` and provides:
+
+1. **Intent-based routing** — Uses `IntentClassifier` to determine which data sources to query
+2. **ChromaDB dual-source retrieval** — Queries chat history and/or file changes based on intent
+3. **FileGraph structural queries** — When file intent detected, extracts file paths from query and queries the dependency graph
+4. **Token budget enforcement** — 60% chat / 40% file split, adjustable via configuration
+5. **Graceful degradation** — Works without FileGraph or classifier (fallback to "both" intent)
+
+### File Change History Tracking
+
+File changes are automatically logged to ChromaDB at multiple points:
+
+- **FileGraph updates** — When `update_graph()` processes changed files
+- **FileWatcher callbacks** — When watchdog detects file modifications, creations, or deletions
+
+Each file change document includes: file path, change type (modified/created/deleted), symbols added/removed, code snippet (truncated to 200 chars), and timestamp.
+
+### Auto-Retrieve Fix (Phase 6)
+
+**Critical bug fixed:** The auto-retrieve system was passing the tool *name* (e.g., `"query_chat"`) as the query instead of the actual user query from tool arguments. This has been fixed with `_extract_query_from_arguments()` which extracts the most relevant string from the arguments dictionary (priority: `query` > `conversation` > `search` > `text` > `content`).
+
+### Dual Context Injection
+
+Context is injected into tool responses using a dual format:
+
+```
+[SYSTEM CONTEXT: sources=chat_history, file_changes]
+{retrieved context content}
+[Sources: chat_history, file_changes]
+```
+
+This ensures the LLM sees context as a system-like instruction rather than just appended text.
+
+### Example Queries by Intent
+
+| Query | Detected Intent | Sources Queried |
+|-------|----------------|-----------------|
+| "What did we discuss about caching?" | `chat` | ChromaDB (chat only) |
+| "Which files changed recently?" | `file` | ChromaDB (file changes) + FileGraph |
+| "What did we say about the imports in chat_store.py?" | `both` | ChromaDB (both) + FileGraph |
+| "Show me dependencies of file_graph.py" | `file` | ChromaDB (file changes) + FileGraph |
 
 ## License
 
