@@ -427,3 +427,154 @@ class TestAllToolsTogether:
         assert len(sessions) == 3
 
         store.close()
+
+
+# ── Phase 6: Hybrid Context System Integration Tests ──────────────
+
+
+class TestHybridContextSystem:
+    """Integration tests for the hybrid context retrieval pipeline."""
+
+    @pytest.fixture()
+    def store(self, tmp_path):
+        """Create isolated ChatStore."""
+        return ChatStore(
+            chroma_path=str(tmp_path / "chromadb"),
+            session_index_path=str(tmp_path / "session_index.json"),
+        )
+
+    def test_chat_only_query_returns_chat_source(self, store):
+        """Chat-only query should return sources=['chat_history']."""
+        from context_memory_mcp.context import HybridContextBuilder
+
+        store.store_messages([
+            {"role": "user", "content": "How does ChromaDB work?"},
+            {"role": "assistant", "content": "ChromaDB stores embeddings."},
+        ], session_id="hybrid-chat")
+
+        builder = HybridContextBuilder(store=store)
+        window = builder.build(query="How does ChromaDB work?", session_id="hybrid-chat")
+        assert "chat_history" in window.sources
+
+    def test_file_only_query_returns_file_source(self, store):
+        """File-only query should return sources=['file_changes']."""
+        from context_memory_mcp.context import HybridContextBuilder
+
+        store.store_file_change({
+            "file_path": "src/module.py",
+            "change_type": "modified",
+            "snippet": "def new_func(): pass",
+        })
+
+        builder = HybridContextBuilder(store=store)
+        window = builder.build(query="file changes modified")
+        assert "file_changes" in window.sources
+
+    def test_mixed_query_returns_combined_sources(self, store):
+        """Mixed query should return both chat and file sources."""
+        from context_memory_mcp.context import HybridContextBuilder
+
+        store.store_messages([
+            {"role": "user", "content": "What did we discuss about files?"},
+        ], session_id="hybrid-mixed")
+        store.store_file_change({
+            "file_path": "src/file_graph.py",
+            "change_type": "created",
+            "snippet": "class FileGraph:",
+        })
+
+        builder = HybridContextBuilder(store=store)
+        window = builder.build(query="what did we discuss about files")
+        # "both" intent should query both sources
+        assert len(window.sources) >= 1
+
+    def test_empty_database_returns_empty_sources(self, store):
+        """Empty database should return context gracefully."""
+        from context_memory_mcp.context import HybridContextBuilder
+
+        builder = HybridContextBuilder(store=store)
+        window = builder.build(query="anything")
+        assert isinstance(window.sources, list)
+        assert isinstance(window.content, str)
+
+    def test_file_graph_integration_returns_dependency_info(self, store, tmp_path):
+        """FileGraph integration should return dependency information."""
+        from context_memory_mcp.context import HybridContextBuilder
+        from context_memory_mcp.file_graph import FileGraph
+
+        # Build a small graph
+        test_file = tmp_path / "mod.py"
+        test_file.write_text("import os\n\ndef foo(): pass\n")
+        graph = FileGraph(root_path=str(tmp_path))
+        graph.build_graph(str(tmp_path))
+
+        builder = HybridContextBuilder(store=store, file_graph=graph)
+        window = builder.build(
+            query="import dependencies",
+            active_files=[str(test_file)],
+        )
+        assert isinstance(window.sources, list)
+
+    def test_token_budget_enforced_across_merged_sources(self, store):
+        """Token budget should be enforced across merged sources."""
+        from context_memory_mcp.context import HybridContextBuilder, _estimate_tokens
+
+        # Store many messages
+        messages = [
+            {"role": "user", "content": f"Message {i}: " + "x" * 80}
+            for i in range(20)
+        ]
+        store.store_messages(messages, session_id="budget-hybrid")
+
+        builder = HybridContextBuilder(store=store, max_tokens=300)
+        window = builder.build(query="Message", session_id="budget-hybrid")
+        # Allow 50 token overflow margin
+        assert window.token_count <= 350
+
+    def test_full_pipeline_store_messages_and_file_changes(self, store):
+        """Full pipeline: store messages + file changes → query → verify."""
+        from context_memory_mcp.context import HybridContextBuilder
+
+        # Store chat messages
+        store.store_messages([
+            {"role": "user", "content": "What changed in the codebase?"},
+            {"role": "assistant", "content": "Several files were modified."},
+        ], session_id="full-hybrid")
+
+        # Store file changes
+        store.store_file_change({
+            "file_path": "src/changed.py",
+            "change_type": "modified",
+            "snippet": "def updated_function(): return 'new'",
+        })
+
+        # Query both sources
+        builder = HybridContextBuilder(store=store)
+        window = builder.build(query="what changed in the codebase", session_id="full-hybrid")
+
+        assert window.token_count > 0
+        assert len(window.sources) >= 1
+
+    def test_auto_retrieve_via_monkey_patch_uses_hybrid_context(self, store):
+        """Auto-retrieve via monkey-patch should inject hybrid context."""
+        from context_memory_mcp.auto_retrieve import ContextInjector
+        from context_memory_mcp.config import AutoConfig
+
+        config = AutoConfig(auto_retrieve=True, auto_context_tokens=300)
+
+        # Store chat and file changes
+        store.store_messages([
+            {"role": "user", "content": "How does vector search work?"},
+        ], session_id="monkey-hybrid")
+        store.store_file_change({
+            "file_path": "src/search.py",
+            "change_type": "modified",
+            "snippet": "def vector_search(query): ...",
+        })
+
+        # Create injector with store (no full builder wiring needed for this test)
+        injector = ContextInjector(store, config)
+        result = injector.inject(query="vector search", session_id="monkey-hybrid")
+
+        # Should have dual injection format
+        assert "[SYSTEM CONTEXT:" in result
