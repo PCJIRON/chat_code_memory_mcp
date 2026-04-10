@@ -75,7 +75,7 @@ class TestAutoRetrieveE2E:
         injector = ContextInjector(chat_store, config_all_enabled)
         result = injector.inject(query="vector search", session_id="retrieve-session")
 
-        assert "[Auto-Context]" in result
+        assert "[SYSTEM CONTEXT:" in result
         assert "vector" in result.lower() or "search" in result.lower()
 
     def test_auto_retrieve_respects_token_budget_e2e(self, chat_store):
@@ -92,7 +92,9 @@ class TestAutoRetrieveE2E:
         result = injector.inject(query="Message", session_id="budget-e2e")
 
         if result:
-            content = result.replace("[Auto-Context]\n", "")
+            # Extract content after [SYSTEM CONTEXT: ...] header
+            lines = result.split("\n", 1)
+            content = lines[1] if len(lines) > 1 else result
             tokens = _estimate_tokens(content)
             # Allow 50 token overflow margin
             assert tokens <= config.auto_context_tokens + 50
@@ -173,7 +175,7 @@ class TestFullPipelineE2E:
         # Step 3: Auto-retrieve finds saved context
         injector = ContextInjector(chat_store, config_all_enabled)
         context = injector.inject(query="ChromaDB", session_id="full-pipeline")
-        assert "[Auto-Context]" in context
+        assert "[SYSTEM CONTEXT:" in context
 
 
 class TestMonkeyPatchQueryExtraction:

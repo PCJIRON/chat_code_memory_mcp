@@ -40,7 +40,7 @@ class TestContextInjector:
     """Tests for ContextInjector."""
 
     def test_context_injector_returns_context_when_messages_exist(self, chat_store, config_enabled):
-        """When ChromaDB has messages, inject should return [Auto-Context] string."""
+        """When ChromaDB has messages, inject should return [SYSTEM CONTEXT] string."""
         # Populate ChromaDB
         chat_store.store_messages([
             {"role": "user", "content": "How do I use vector databases?"},
@@ -50,14 +50,15 @@ class TestContextInjector:
         injector = ContextInjector(chat_store, config_enabled)
         result = injector.inject(query="vector db", session_id="inject-session")
 
-        assert "[Auto-Context]" in result
+        assert "[SYSTEM CONTEXT:" in result
         assert "vector" in result.lower() or "search" in result.lower()
 
     def test_context_injector_returns_empty_when_no_messages(self, chat_store, config_enabled):
-        """Empty ChromaDB should return empty string."""
+        """Empty ChromaDB should return context with 'no relevant context' message."""
         injector = ContextInjector(chat_store, config_enabled)
         result = injector.inject(query="anything")
-        assert result == ""
+        # With HybridContextBuilder, returns "No relevant context found" when empty
+        assert "No relevant context found" in result or result == ""
 
     def test_context_injector_returns_empty_when_disabled(self, chat_store, config_disabled):
         """When auto_retrieve is False, should return empty string."""
