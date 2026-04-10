@@ -6,6 +6,7 @@ Uses synchronous testing (no real threading, no monkey-patching in tests).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from unittest.mock import MagicMock, patch
@@ -173,3 +174,55 @@ class TestFullPipelineE2E:
         injector = ContextInjector(chat_store, config_all_enabled)
         context = injector.inject(query="ChromaDB", session_id="full-pipeline")
         assert "[Auto-Context]" in context
+
+
+class TestMonkeyPatchQueryExtraction:
+    """Test that the monkey-patch interception extracts real queries, not tool names."""
+
+    @pytest.fixture()
+    def isolated_store(self, tmp_path):
+        """Create an isolated ChatStore for testing."""
+        store = ChatStore(chroma_path=str(tmp_path / "chromadb"))
+        yield store
+        store.close()
+
+    def test_intercepted_call_uses_query_arg_not_tool_name(self, isolated_store, tmp_path):
+        """Monkey-patched call_tool should extract 'query' from arguments, not use tool name."""
+        from context_memory_mcp.mcp_server import _extract_query_from_arguments
+
+        # Verify the helper extracts query correctly
+        assert _extract_query_from_arguments({"query": "how does vector search work"}) == "how does vector search work"
+        assert _extract_query_from_arguments({"query": "what are dependencies"}) == "what are dependencies"
+        # Should not return the tool name
+        assert _extract_query_from_arguments({"query": "real query", "top_k": 5}) == "real query"
+
+    def test_intercepted_call_extract_fallback_keys(self):
+        """Fallback should use conversation, search, text, content in priority order."""
+        from context_memory_mcp.mcp_server import _extract_query_from_arguments
+
+        assert _extract_query_from_arguments({"conversation": "conv text"}) == "conv text"
+        assert _extract_query_from_arguments({"search": "search terms"}) == "search terms"
+        assert _extract_query_from_arguments({"text": "some text"}) == "some text"
+        assert _extract_query_from_arguments({"content": "content here"}) == "content here"
+
+    def test_intercepted_call_join_fallback(self):
+        """When no known key exists, join all values."""
+        from context_memory_mcp.mcp_server import _extract_query_from_arguments
+
+        result = _extract_query_from_arguments({"foo": "bar", "baz": "qux"})
+        assert "bar" in result
+        assert "qux" in result
+
+    def test_intercepted_call_empty_arguments(self):
+        """Empty arguments should return empty string."""
+        from context_memory_mcp.mcp_server import _extract_query_from_arguments
+
+        assert _extract_query_from_arguments({}) == ""
+
+    def test_intercepted_call_empty_query_falls_back(self):
+        """Empty query string should fall back to next available key."""
+        from context_memory_mcp.mcp_server import _extract_query_from_arguments
+
+        # Empty query should fall through to text
+        result = _extract_query_from_arguments({"query": "", "text": "fallback text"})
+        assert result == "fallback text"
