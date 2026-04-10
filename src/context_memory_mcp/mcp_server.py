@@ -76,6 +76,26 @@ def register_all() -> None:
     register_context(mcp)
 
 
+def _extract_query_from_arguments(arguments: dict[str, Any]) -> str:
+    """Extract the most relevant query string from tool arguments.
+
+    Priority order: query > conversation > search > text > content > fallback join.
+
+    Args:
+        arguments: Tool call arguments dictionary.
+
+    Returns:
+        The most relevant string to use as a retrieval query.
+    """
+    for key in ("query", "conversation", "search", "text", "content"):
+        if key in arguments and isinstance(arguments[key], str):
+            val = arguments[key].strip()
+            if val:
+                return val
+    # Fallback: join all string values
+    return " ".join(str(v) for v in arguments.values()) if arguments else ""
+
+
 def _wire_interception(mcp: FastMCP) -> None:
     """Monkey-patch mcp.call_tool for auto-save and auto-retrieve.
 
@@ -111,7 +131,8 @@ def _wire_interception(mcp: FastMCP) -> None:
         context_block = None
         if config.auto_retrieve and name not in SKIP_CONTEXT_TOOLS:
             session_id = _auto_save_middleware.session_id if _auto_save_middleware else None
-            context_block = _context_injector.inject(query=name, session_id=session_id)
+            user_query = _extract_query_from_arguments(arguments)
+            context_block = _context_injector.inject(query=user_query, session_id=session_id)
 
         # Pre-tool: capture tool call for auto-save
         if config.auto_save and _auto_save_middleware:
