@@ -192,17 +192,25 @@ class ChatStore:
         self,
         session_id: str | None = None,
         role: str | None = None,
+        doc_type: str | None = None,
     ) -> dict[str, Any] | None:
         """Build ChromaDB where clause from optional filters.
 
         Returns None if no filters, single dict if one filter,
         or {'$and': [...]} if multiple filters.
+
+        Args:
+            session_id: Optional session ID filter.
+            role: Optional role filter.
+            doc_type: Optional document type filter ("chat" or "file_change").
         """
         conditions: list[dict[str, Any]] = []
         if session_id:
             conditions.append({"session_id": session_id})
         if role:
             conditions.append({"role": role})
+        if doc_type:
+            conditions.append({"type": doc_type})
         if not conditions:
             return None
         if len(conditions) == 1:
@@ -280,10 +288,15 @@ class ChatStore:
         metas = result["metadatas"][0]
         dists = result["distances"][0]
 
-        # Apply date filtering in Python (ISO 8601 strings compare lexicographically)
+        # Apply date filtering + type filtering in Python
+        # Treat missing type as "chat" for backward compatibility
         filtered: list[dict[str, Any]] = []
         for i in range(len(docs)):
             ts = metas[i]["timestamp"]
+            # Skip file_change documents — only return chat messages
+            doc_type = metas[i].get("type", "chat")
+            if doc_type == "file_change":
+                continue
             if date_from and ts < date_from:
                 continue
             if date_to and ts > date_to:
@@ -294,6 +307,130 @@ class ChatStore:
                 "role": metas[i]["role"],
                 "timestamp": ts,
                 "session_id": metas[i]["session_id"],
+                "distance": round(distance, 4),
+                "similarity": round(1 - distance, 4),
+            })
+
+        return filtered[:top_k]
+
+    def store_file_change(
+        self,
+        file_change: dict,
+        session_id: str | None = None,
+    ) -> dict:
+        """Store a file change document in the same collection as chat messages.
+
+        File changes are stored with type="file_change" metadata for filtering.
+
+        Args:
+            file_change: Dict with keys: file_path, change_type, symbols_added,
+                symbols_removed, snippet (optional), timestamp (optional).
+            session_id: Optional session ID for grouping.
+
+        Returns:
+            Dict with 'stored' count and 'id'.
+
+        Raises:
+            ValueError: If file_change is missing required keys.
+        """
+        required_keys = ("file_path", "change_type")
+        for key in required_keys:
+            if key not in file_change:
+                raise ValueError(f"file_change missing required key: {key}")
+
+        now = datetime.now(timezone.utc).isoformat()
+        uid = "fc_" + uuid.uuid4().hex
+
+        # Build document string: "{change_type} {file_path}: {snippet}"
+        snippet = file_change.get("snippet", "")
+        # Truncate snippet to 200 chars for embedding quality
+        if len(snippet) > 200:
+            snippet = snippet[:200] + "..."
+
+        doc = f"{file_change['change_type']} {file_change['file_path']}: {snippet}"
+
+        metadata = {
+            "type": "file_change",
+            "file_path": file_change["file_path"],
+            "change_type": file_change["change_type"],
+            "symbols": file_change.get("symbols_added", "")[:500],
+            "timestamp": file_change.get("timestamp", now),
+        }
+        if session_id:
+            metadata["session_id"] = session_id
+
+        self._collection.add(
+            ids=[uid],
+            documents=[doc],
+            metadatas=[metadata],
+        )
+
+        return {"stored": 1, "id": uid}
+
+    def query_file_changes(
+        self,
+        query: str,
+        top_k: int = 5,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        file_path: str | None = None,
+        change_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query file change documents by semantic similarity with optional filters.
+
+        Args:
+            query: Natural language search query.
+            top_k: Number of results to return.
+            date_from: ISO 8601 start date.
+            date_to: ISO 8601 end date.
+            file_path: Filter to specific file path.
+            change_type: Filter by change type (modified/created/deleted).
+
+        Returns:
+            List of result dicts with content, file_path, change_type, symbols,
+            timestamp, distance, similarity.
+        """
+        # Build where clause
+        conditions: list[dict[str, Any]] = [{"type": "file_change"}]
+        if file_path:
+            conditions.append({"file_path": file_path})
+        if change_type:
+            conditions.append({"change_type": change_type})
+
+        if len(conditions) == 1:
+            where = conditions[0]
+        else:
+            where = {"$and": conditions}
+
+        # Over-fetch for date filtering
+        n_results = max(top_k * 3, 50)
+
+        result = self._collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            where=where,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        docs = result["documents"][0]
+        metas = result["metadatas"][0]
+        dists = result["distances"][0]
+
+        # Apply date filtering in Python
+        filtered: list[dict[str, Any]] = []
+        for i in range(len(docs)):
+            ts = metas[i].get("timestamp", "")
+            if date_from and ts < date_from:
+                continue
+            if date_to and ts > date_to:
+                continue
+            distance = dists[i]
+            filtered.append({
+                "content": docs[i],
+                "file_path": metas[i].get("file_path", ""),
+                "change_type": metas[i].get("change_type", ""),
+                "symbols": metas[i].get("symbols", ""),
+                "timestamp": ts,
                 "distance": round(distance, 4),
                 "similarity": round(1 - distance, 4),
             })
