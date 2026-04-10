@@ -481,6 +481,79 @@ class FileGraph:
         stored = self._hash_index.get(file_path, {})
         return current_hash != stored.get("hash")
 
+    def _log_file_changes_to_store(
+        self,
+        changed_files: list[str],
+        removed_files: list[str],
+        new_symbols: dict[str, list],
+    ) -> None:
+        """Log file changes to ChromaDB via ChatStore.store_file_change().
+
+        Hook is optional — doesn't break if store is unavailable.
+
+        Args:
+            changed_files: List of changed file paths.
+            removed_files: List of removed file paths.
+            new_symbols: Dict mapping file_path to parsed symbols.
+        """
+        try:
+            # Lazy import to avoid circular dependency
+            from context_memory_mcp.chat_store import get_store
+
+            store = get_store()
+        except Exception:
+            return  # Store unavailable — skip logging
+
+        from datetime import datetime, timezone
+
+        # Log modified/created files
+        for f in changed_files:
+            if not os.path.exists(f):
+                continue
+            # Determine change type
+            if f in self._hash_index:
+                change_type = "modified"
+            else:
+                change_type = "created"
+
+            # Extract symbol info
+            symbols = new_symbols.get(f, [])
+            symbols_added = ", ".join(s.qualified_name for s in symbols[:10])
+
+            # Build snippet (first 200 chars of file content)
+            snippet = ""
+            try:
+                with open(f, "r", encoding="utf-8") as fh:
+                    snippet = fh.read()[:200]
+            except Exception:
+                pass
+
+            try:
+                store.store_file_change({
+                    "file_path": f,
+                    "change_type": change_type,
+                    "symbols_added": symbols_added,
+                    "symbols_removed": "",
+                    "snippet": snippet,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+            except Exception:
+                pass  # Skip individual failures
+
+        # Log removed files
+        for f in removed_files:
+            try:
+                store.store_file_change({
+                    "file_path": f,
+                    "change_type": "deleted",
+                    "symbols_added": "",
+                    "symbols_removed": "",
+                    "snippet": "",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+            except Exception:
+                pass
+
     def update_graph(self, directory: str, changed_files: list[str] | None = None) -> dict:
         """Incrementally update the graph with changed files.
 
@@ -605,6 +678,9 @@ class FileGraph:
 
         removed_count = len(removed_files)
         unchanged_count = len(all_files) - len(changed_files)
+
+        # Log file changes to ChromaDB (optional — doesn't break if store unavailable)
+        self._log_file_changes_to_store(changed_files, removed_files, new_symbols)
 
         logging.info(
             f"Graph updated: {updated_count} updated, {removed_count} removed, "
