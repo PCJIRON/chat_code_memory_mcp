@@ -1,9 +1,9 @@
 # Context Memory MCP Server — State
 
 ## Current Position
-- **Status**: PHASE_6_REVIEWED — Peer review PASS_WITH_NOTES (0 CRITICAL, 4 MAJOR deferrable)
-- **Last Action**: Phase 6 peer review complete — 6-REVIEW.md created
-- **Next Step**: Ship Phase 6 — `/gsd:ship 6` (MAJOR issues are deferrable, not blockers)
+- **Status**: PHASE_6_SHIPPED — All 6 phases complete, project finished
+- **Last Action**: Phase 6 shipped — 6-SHIP.md created
+- **Next Step**: Project complete. Run `/gsd:next` for new project or start using the server.
 
 ## Phase 6 Peer Review
 - **Verdict:** PASS_WITH_NOTES (6-REVIEW.md)
