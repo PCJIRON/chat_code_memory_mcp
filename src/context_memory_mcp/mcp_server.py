@@ -26,6 +26,8 @@ mcp = FastMCP("context-memory-mcp")
 _auto_save_middleware = None
 _context_injector = None
 _file_watcher = None
+_intent_classifier = None
+_context_builder = None
 
 
 def get_auto_save():
@@ -36,6 +38,16 @@ def get_auto_save():
 def get_injector():
     """Get the context injector instance (set during wiring)."""
     return _context_injector
+
+
+def get_intent_classifier():
+    """Get the intent classifier instance (set during wiring)."""
+    return _intent_classifier
+
+
+def get_context_builder():
+    """Get the context builder instance (set during wiring)."""
+    return _context_builder
 
 
 def _register_core(mcp: FastMCP) -> None:
@@ -108,15 +120,46 @@ def _wire_interception(mcp: FastMCP) -> None:
     from context_memory_mcp.auto_save import AutoSaveMiddleware
     from context_memory_mcp.chat_store import get_store
     from context_memory_mcp.config import get_config
+    from context_memory_mcp.context import HybridContextBuilder
 
-    global _auto_save_middleware, _context_injector
+    global _auto_save_middleware, _context_injector, _intent_classifier, _context_builder
 
     config = get_config()
     store = get_store()
 
+    # Create IntentClassifier singleton (pre-computes centroids)
+    try:
+        from context_memory_mcp.intent_classifier import IntentClassifier
+
+        _intent_classifier = IntentClassifier(store._ef)
+    except Exception as e:
+        import logging
+
+        logging.warning("IntentClassifier init failed (%s), using fallback", e)
+        _intent_classifier = None
+
+    # Get optional FileGraph
+    file_graph = None
+    try:
+        from context_memory_mcp.file_graph import get_graph
+
+        file_graph = get_graph()
+    except Exception:
+        pass
+
+    # Create HybridContextBuilder singleton
+    _context_builder = HybridContextBuilder(
+        store=store,
+        file_graph=file_graph,
+        classifier=_intent_classifier,
+        max_tokens=config.auto_context_tokens,
+    )
+
     # Create instances
     _auto_save_middleware = AutoSaveMiddleware(store, config)
-    _context_injector = ContextInjector(store, config)
+    _context_injector = ContextInjector(
+        store, config, builder=_context_builder
+    )
 
     # Tools that don't benefit from context injection
     SKIP_CONTEXT_TOOLS = frozenset({
