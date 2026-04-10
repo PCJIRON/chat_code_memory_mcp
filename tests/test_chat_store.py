@@ -499,3 +499,141 @@ def test_query_messages_empty_results(store: ChatStore) -> None:
         top_k=5,
     )
     assert results == []
+
+
+# --- Phase 6: File change storage and queries ---
+
+
+def test_store_file_change_stores_with_metadata(store: ChatStore) -> None:
+    """store_file_change should store with correct metadata."""
+    result = store.store_file_change({
+        "file_path": "src/test.py",
+        "change_type": "modified",
+        "snippet": "def foo(): pass",
+    })
+    assert result["stored"] == 1
+    assert result["id"].startswith("fc_")
+
+
+def test_store_file_change_requires_file_path(store: ChatStore) -> None:
+    """Missing file_path should raise ValueError."""
+    with pytest.raises(ValueError, match="missing required key: file_path"):
+        store.store_file_change({"change_type": "modified"})
+
+
+def test_store_file_change_requires_change_type(store: ChatStore) -> None:
+    """Missing change_type should raise ValueError."""
+    with pytest.raises(ValueError, match="missing required key: change_type"):
+        store.store_file_change({"file_path": "src/test.py"})
+
+
+def test_query_file_changes_returns_results(store: ChatStore) -> None:
+    """query_file_changes should return file_change documents."""
+    store.store_file_change({
+        "file_path": "src/test.py",
+        "change_type": "modified",
+        "snippet": "def foo(): pass",
+    })
+    results = store.query_file_changes("test.py", top_k=5)
+    assert len(results) >= 1
+    assert results[0]["file_path"] == "src/test.py"
+    assert results[0]["change_type"] == "modified"
+
+
+def test_query_file_changes_excludes_chat_messages(store: ChatStore) -> None:
+    """query_file_changes should not return chat messages."""
+    store.store_messages([
+        {"role": "user", "content": "hello world"},
+    ], session_id="chat-sess")
+    results = store.query_file_changes("hello", top_k=5)
+    assert len(results) == 0
+
+
+def test_query_messages_excludes_file_changes(store: ChatStore) -> None:
+    """query_messages should not return file_change documents."""
+    store.store_file_change({
+        "file_path": "src/test.py",
+        "change_type": "modified",
+        "snippet": "def foo(): pass",
+    })
+    results = store.query_messages("test", top_k=5)
+    for r in results:
+        assert "type" not in r or r.get("type") != "file_change"
+
+
+def test_query_file_changes_by_change_type(store: ChatStore) -> None:
+    """query_file_changes should filter by change_type."""
+    store.store_file_change({
+        "file_path": "src/a.py",
+        "change_type": "modified",
+        "snippet": "def a(): pass",
+    })
+    store.store_file_change({
+        "file_path": "src/b.py",
+        "change_type": "created",
+        "snippet": "def b(): pass",
+    })
+    results = store.query_file_changes("src", top_k=10, change_type="created")
+    for r in results:
+        assert r["change_type"] == "created"
+
+
+def test_query_file_changes_by_file_path(store: ChatStore) -> None:
+    """query_file_changes should filter by file_path."""
+    store.store_file_change({
+        "file_path": "src/a.py",
+        "change_type": "modified",
+        "snippet": "def a(): pass",
+    })
+    store.store_file_change({
+        "file_path": "src/b.py",
+        "change_type": "modified",
+        "snippet": "def b(): pass",
+    })
+    results = store.query_file_changes("src", top_k=10, file_path="src/a.py")
+    for r in results:
+        assert r["file_path"] == "src/a.py"
+
+
+def test_query_file_changes_empty_collection(store: ChatStore) -> None:
+    """Empty file changes collection should return empty list."""
+    results = store.query_file_changes("anything", top_k=5)
+    assert results == []
+
+
+def test_store_file_change_truncates_long_snippet(store: ChatStore) -> None:
+    """Long snippets should be truncated to 200 chars."""
+    long_snippet = "x" * 500
+    store.store_file_change({
+        "file_path": "src/long.py",
+        "change_type": "modified",
+        "snippet": long_snippet,
+    })
+    results = store.query_file_changes("long", top_k=5)
+    assert len(results) >= 1
+    # The stored document should be truncated
+    assert len(results[0]["content"]) < 500
+
+
+def test_store_file_change_deleted_file(store: ChatStore) -> None:
+    """Deleted files should be stored without snippet."""
+    store.store_file_change({
+        "file_path": "src/removed.py",
+        "change_type": "deleted",
+        "snippet": "",
+    })
+    results = store.query_file_changes("removed", top_k=5)
+    assert len(results) >= 1
+    assert results[0]["change_type"] == "deleted"
+
+
+def test_file_change_backward_compat_with_chat_messages(store: ChatStore) -> None:
+    """Chat messages stored before file_change feature should still be queryable."""
+    # Store a regular chat message (no type metadata)
+    store.store_messages([
+        {"role": "user", "content": "legacy message without type"},
+    ], session_id="legacy-sess")
+    # query_messages should still find it (treats missing type as "chat")
+    results = store.query_messages("legacy", top_k=5)
+    assert len(results) >= 1
+    assert "legacy message" in results[0]["content"]
